@@ -19,6 +19,7 @@ function createWindow() {
     const win = new electron_1.BrowserWindow({
         width: 1200,
         height: 800,
+        icon: path_1.default.join(__dirname, '../public/cpu.png'),
         webPreferences: {
             preload: path_1.default.join(__dirname, 'preload.js'),
             nodeIntegration: false,
