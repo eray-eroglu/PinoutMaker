@@ -34,9 +34,24 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
   setPosition,
 }, ref) => {
 
-  // Hardcoded for now. In a real app we'd use a ResizeObserver on the container div.
-  const width = window.innerWidth - 320;
-  const height = window.innerHeight - 56;
+  const [dimensions, setDimensions] = useState({
+    width: window.innerWidth - 320,
+    height: window.innerHeight - 56
+  });
+
+  useEffect(() => {
+    const handleResize = () => {
+      setDimensions({
+        width: window.innerWidth - 320,
+        height: window.innerHeight - 56
+      });
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const { width, height } = dimensions;
 
   // Center image when it loads or rotates
   useEffect(() => {
@@ -61,7 +76,7 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
       // Actually, if we set image x=0, y=0 to be TopLeft, rotation is hard.
       // Let's set Image x=0, y=0 to be CENTER of image.
     }
-  }, [image, imageRotation, width, height]);
+  }, [image, imageRotation]); // Removed width and height from dependencies
 
   const handleWheel = (e: Konva.KonvaEventObject<WheelEvent>) => {
     e.evt.preventDefault();

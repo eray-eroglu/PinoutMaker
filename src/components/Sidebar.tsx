@@ -1,8 +1,11 @@
+import { useState } from 'react';
 import type { PinData } from '../types';
 
 interface SidebarProps {
   selectedPin: PinData | null;
   onUpdatePin: (pin: PinData) => void;
+  pins: PinData[];
+  scale: number;
 }
 
 const COLORS = [
@@ -35,7 +38,9 @@ const getSmartColor = (text: string): string | null => {
   return null;
 };
 
-export const Sidebar = ({ selectedPin, onUpdatePin }: SidebarProps) => {
+export const Sidebar = ({ selectedPin, onUpdatePin, pins, scale }: SidebarProps) => {
+  const [customStep, setCustomStep] = useState<number>(5);
+
   const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (selectedPin) {
       const newText = e.target.value;
@@ -58,6 +63,45 @@ export const Sidebar = ({ selectedPin, onUpdatePin }: SidebarProps) => {
   const handlePwmChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (selectedPin) {
       onUpdatePin({ ...selectedPin, isPwm: e.target.checked });
+    }
+  };
+
+  // --- Mesafe Ayarlama Mantığı ---
+  // Kullanıcıdan px cinsinden değer alıp, bunu pinin x/y koordinatlarına yansıtacağız.
+  // "Solundaki/Sağındaki" derken, en yakın pini veya hedef noktayı (anchor) baz alabiliriz.
+  // Şimdilik en basit haliyle: Seçili pinin X koordinatını manuel olarak px cinsinden kaydırma.
+  
+  const handleMoveLeft = (px: number) => {
+    if (selectedPin) {
+      // Sola kaydırmak için X değerini azaltıyoruz.
+      // labelDx/labelDy kullanıyorsak onları da güncellemeliyiz.
+      const newX = selectedPin.x - px;
+      const newDx = (newX - selectedPin.targetX) * scale;
+      onUpdatePin({ ...selectedPin, x: newX, labelDx: newDx });
+    }
+  };
+
+  const handleMoveRight = (px: number) => {
+    if (selectedPin) {
+      const newX = selectedPin.x + px;
+      const newDx = (newX - selectedPin.targetX) * scale;
+      onUpdatePin({ ...selectedPin, x: newX, labelDx: newDx });
+    }
+  };
+  
+  const handleMoveUp = (px: number) => {
+    if (selectedPin) {
+      const newY = selectedPin.y - px;
+      const newDy = (newY - selectedPin.targetY) * scale;
+      onUpdatePin({ ...selectedPin, y: newY, labelDy: newDy });
+    }
+  };
+
+  const handleMoveDown = (px: number) => {
+    if (selectedPin) {
+      const newY = selectedPin.y + px;
+      const newDy = (newY - selectedPin.targetY) * scale;
+      onUpdatePin({ ...selectedPin, y: newY, labelDy: newDy });
     }
   };
 
@@ -123,6 +167,70 @@ export const Sidebar = ({ selectedPin, onUpdatePin }: SidebarProps) => {
             onChange={handlePwmChange}
           />
           <label className='text-sm text-gray-600'>PWM Capable</label>
+        </div>
+
+        <hr className="my-4 border-gray-300" />
+
+        <div>
+          <label className='block text-sm font-medium text-gray-600 mb-2'>
+            Position Adjustment (px)
+          </label>
+          
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-xs text-gray-500">Step:</span>
+            <input 
+              type="number" 
+              min="1" 
+              max="100" 
+              value={customStep}
+              onChange={(e) => setCustomStep(Number(e.target.value) || 1)}
+              className="w-16 border border-gray-300 rounded px-2 py-1 text-xs outline-none focus:border-blue-500"
+            />
+            <span className="text-xs text-gray-500">px</span>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2 text-center">
+            <div></div>
+            <button 
+              onClick={() => handleMoveUp(customStep)}
+              className="bg-gray-200 hover:bg-gray-300 text-gray-700 py-1 px-2 rounded text-xs font-bold"
+              title={`Move Up ${customStep}px`}
+            >
+              ↑
+            </button>
+            <div></div>
+            
+            <button 
+              onClick={() => handleMoveLeft(customStep)}
+              className="bg-gray-200 hover:bg-gray-300 text-gray-700 py-1 px-2 rounded text-xs font-bold"
+              title={`Move Left ${customStep}px`}
+            >
+              ←
+            </button>
+            <div className="flex items-center justify-center text-xs text-gray-500 font-medium">
+              {customStep}px
+            </div>
+            <button 
+              onClick={() => handleMoveRight(customStep)}
+              className="bg-gray-200 hover:bg-gray-300 text-gray-700 py-1 px-2 rounded text-xs font-bold"
+              title={`Move Right ${customStep}px`}
+            >
+              →
+            </button>
+            
+            <div></div>
+            <button 
+              onClick={() => handleMoveDown(customStep)}
+              className="bg-gray-200 hover:bg-gray-300 text-gray-700 py-1 px-2 rounded text-xs font-bold"
+              title={`Move Down ${customStep}px`}
+            >
+              ↓
+            </button>
+            <div></div>
+          </div>
+          <p className="text-xs text-gray-400 mt-2">
+            Use these buttons to fine-tune the label's position relative to other pins.
+          </p>
         </div>
       </div>
     </div>

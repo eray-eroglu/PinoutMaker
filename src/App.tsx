@@ -382,7 +382,12 @@ function App() {
           position={position}
           setPosition={setPosition}
         />
-        <Sidebar selectedPin={selectedPin} onUpdatePin={updatePin} />
+        <Sidebar 
+          selectedPin={selectedPin} 
+          onUpdatePin={updatePin} 
+          pins={pins}
+          scale={scale}
+        />
       </div>
     </div>
   );

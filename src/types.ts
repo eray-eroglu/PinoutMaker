@@ -6,6 +6,8 @@ export interface PinData {
   targetY: number;
   labelDx?: number; // Visual offset X (screen pixels)
   labelDy?: number; // Visual offset Y (screen pixels)
+  labelWidth?: number; // Width of the label in world coordinates
+  labelHeight?: number; // Height of the label in world coordinates
   text: string;
   color: string;
   isPwm: boolean;
