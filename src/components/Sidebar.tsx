@@ -1,45 +1,62 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import type { PinData } from '../types';
 
 interface SidebarProps {
   selectedPin: PinData | null;
   onUpdatePin: (pin: PinData) => void;
-  pins: PinData[];
   scale: number;
 }
 
 const COLORS = [
-  '#f50c0c', // red-500
-  '#3b82f6', // blue-500
-  '#22c55e', // green-500
-  '#f97316', // orange-500
-  '#a855f7', // purple-500
-  '#ec4899', // pink-500
-  '#14b8a6', // teal-500
-  '#eab308', // yellow-500
-  '#000000', // black
-  '#6b7280', // gray-500 (default/neutral)
-  '#034d13', // cyan-400 (extra option)
-  '#ed403a', // red-500 (extra option)
-  '#335cb4', // blue-600 (extra option)
+  '#dc2626', // POWER (Red)
+  '#000000', // GROUND (Black)
+  '#0d9488', // PHYSICAL PIN (Teal)
+  '#ca8a04', // PIN NAME / CONTROL (Yellow/Gold)
+  '#16a34a', // ANALOG (Green)
+  '#e11d48', // TIMER & CHANNEL (Rose)
+  '#1d4ed8', // USART (Dark Blue)
+  '#9333ea', // SPI (Purple)
+  '#0ea5e9', // I2C (Light Blue)
+  '#db2777', // CAN BUS (Pink)
+  '#65a30d', // USB (Olive Green)
+  '#4b5563', // MISC (Gray)
+  '#ea580c', // BOARD HARDWARE (Orange)
+  '#1f2937', // gray-800 (default/neutral)
 ];
 
 const getSmartColor = (text: string): string | null => {
   const upperText = text.toUpperCase().trim();
   
-  if (upperText === 'GND') return '#000000'; // Black
-  if (['VCC', '5V', '3V3'].includes(upperText)) return '#f50c0c'; // Red
-  if (['GPIO', 'PB', 'PA', 'PC'].includes(upperText)) return '#a855f7'; // Purple
-  if (['SDA', 'SCL'].includes(upperText)) return '#22c55e'; // Green
-  if (['ADC'].includes(upperText)) return '#f97316'; // Orange
-  if (['RX', 'TX', 'CTS', 'RTS'].includes(upperText)) return '#3b82f6'; // Blue
-  if (['CS', 'SCK', 'MOSI', 'MISO', 'NSS', 'CLK'].includes(upperText)) return '#ec4899'; // Pink
+  if (upperText === 'GND') return '#000000'; // GROUND
+  if (['VCC', '5V', '3V3', 'VIN', 'VDD', 'VSS'].includes(upperText)) return '#dc2626'; // POWER
+  if (['GPIO', 'PB', 'PA', 'PC'].includes(upperText) || (upperText.startsWith('P') && upperText.length <= 4 && !isNaN(Number(upperText.slice(2))))) return '#0d9488'; // PHYSICAL PIN
+  if (['SDA', 'SCL', 'I2C'].includes(upperText)) return '#0ea5e9'; // I2C
+  if (upperText.startsWith('ADC') || upperText.startsWith('AIN') || upperText.startsWith('DAC')) return '#16a34a'; // ANALOG
+  if (['RX', 'TX', 'CTS', 'RTS'].includes(upperText) || upperText.startsWith('UART') || upperText.startsWith('USART')) return '#1d4ed8'; // USART
+  if (['CS', 'SCK', 'MOSI', 'MISO', 'NSS', 'CLK'].includes(upperText) || upperText.startsWith('SPI')) return '#9333ea'; // SPI
+  if (upperText.startsWith('CAN')) return '#db2777'; // CAN BUS
+  if (upperText.startsWith('TIM') || upperText.startsWith('CH')) return '#e11d48'; // TIMER & CHANNEL
+  if (upperText.startsWith('USB') || ['D+', 'D-'].includes(upperText)) return '#65a30d'; // USB
+  if (['EN', 'BOOT', 'RST', 'RESET'].includes(upperText)) return '#ca8a04'; // CONTROL
   
   return null;
 };
 
-export const Sidebar = ({ selectedPin, onUpdatePin, pins, scale }: SidebarProps) => {
+export const Sidebar = ({ selectedPin, onUpdatePin, scale }: SidebarProps) => {
   const [customStep, setCustomStep] = useState<number>(5);
+  const nameInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const handleFocus = () => {
+      if (nameInputRef.current) {
+        nameInputRef.current.focus();
+        nameInputRef.current.select();
+      }
+    };
+
+    window.addEventListener('focus-sidebar-input', handleFocus);
+    return () => window.removeEventListener('focus-sidebar-input', handleFocus);
+  }, []);
 
   const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (selectedPin) {
@@ -130,6 +147,7 @@ export const Sidebar = ({ selectedPin, onUpdatePin, pins, scale }: SidebarProps)
             Pin Name
           </label>
           <input
+            ref={nameInputRef}
             type='text'
             className='w-full border border-gray-300 rounded px-2 py-1.5 text-sm outline-none focus:border-blue-500'
             value={selectedPin.text}

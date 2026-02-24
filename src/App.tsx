@@ -81,6 +81,17 @@ function App() {
   const selectPin = (id: string | null) => {
     setSelectedPinId(id);
   };
+  
+  const handlePinDoubleClick = (id: string, currentText: string) => {
+    // When double clicking a pin, we just want to ensure it is selected
+    // so that the sidebar input becomes active.
+    // We can also focus the sidebar input programmatically if needed.
+    console.log("App: handlePinDoubleClick", id);
+    setSelectedPinId(id);
+    
+    // Dispatch a custom event to focus the sidebar input
+    window.dispatchEvent(new CustomEvent('focus-sidebar-input'));
+  };
 
   const selectedPin = pins.find((p) => p.id === selectedPinId) || null;
 
@@ -96,6 +107,25 @@ function App() {
           activeElement.isContentEditable)
       ) {
         return;
+      }
+
+      // Delete (Delete or Backspace)
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (selectedPinId) {
+          // If editing text in Sidebar, don't delete pin
+          const activeElement = document.activeElement as HTMLElement | null;
+          if (
+            activeElement &&
+            (activeElement.tagName === 'INPUT' ||
+              activeElement.tagName === 'TEXTAREA' ||
+              activeElement.isContentEditable)
+          ) {
+            return;
+          }
+          
+          setPins((prevPins) => prevPins.filter((p) => p.id !== selectedPinId));
+          setSelectedPinId(null);
+        }
       }
 
       // Copy (Ctrl+C or Cmd+C)
@@ -177,6 +207,15 @@ function App() {
         setImage(null);
       }
 
+      // AUTO-MIGRATION REMOVE: Users reported pins shifting on every load.
+      // We will trust the saved positions.
+      const migratedPins = (data.pins || []).map(pin => ({
+        ...pin,
+        // Ensure legacy projects have labelDx/Dy initialized if missing, 
+        // but do NOT shift existing positions if they are already set.
+        // PinComponent handles the initialization of labelDx/Dy if undefined.
+      }));
+
       setPins(data.pins || []);
       setImageRotation(data.rotation || 0);
       setScale(data.scale || 1);
@@ -238,12 +277,25 @@ function App() {
 
              // Check label position (approximate box)
              // Label is centered-ish or just check x,y
-             // Label width is variable, let's assume ~150px safe width and ~40px height
-             // It's better to overestimate than cut off.
+             // Label width is variable, but usually proportional to text length
+             // We must account for the current scale, because labels are drawn with inverse scale
+             // to remain constant size on screen.
+             const invScale = 1 / scale;
+             // Use stored width if available, otherwise estimate based on text length (approx 8px per char + padding)
+             const textWidth = p.labelWidth || (Math.max(60, p.text.length * 8) + 20); 
+             const estimatedWidth = textWidth * invScale;
+             const estimatedHeight = (p.labelHeight || 40) * invScale;
+             
+             // PinComponent centers text sometimes? No, Label is top-left at x,y usually.
+             // But let's check PinComponent alignment. It uses center alignment for text, 
+             // but Label x,y is the top-left of the group usually? 
+             // Wait, PinComponent uses x={currentLabelX} y={currentLabelY} for Label.
+             // So x,y is top-left.
+             
              const labelL = p.x; 
-             const labelR = p.x + 100; // rough width
+             const labelR = p.x + estimatedWidth; 
              const labelT = p.y;
-             const labelB = p.y + 30; // rough height
+             const labelB = p.y + estimatedHeight; 
 
              if (labelL < minX) minX = labelL;
              if (labelR > maxX) maxX = labelR;
@@ -257,13 +309,35 @@ function App() {
         return;
     }
 
-    // Add Padding
-    const padding = 50;
+    // Add Padding (Scale sensitive padding)
+    // If zoomed out, padding needs to be larger to be visible
+    const padding = 50 * (1/scale);
     minX -= padding;
     minY -= padding;
     maxX += padding;
     maxY += padding;
     
+    const boardWidth = maxX - minX;
+    
+    // Scale legend based on board size so it's readable
+    const legendScale = Math.max(1, boardWidth / 1000);
+    const legendWidth = 200 * legendScale;
+    const legendHeight = 350 * legendScale;
+
+    // Place legend on the left side of the board
+    const legendWorldX = minX - legendWidth - padding;
+    const legendWorldY = minY;
+
+    // Update minX to include the legend
+    // The view will start from this new minX, so legend will be at (minX + padding, minY + padding) relative to view
+    // Wait, we set stage position to (-minX, -minY).
+    minX = legendWorldX - padding; 
+    
+    // Wait, if legend is taller than content, we might need to adjust maxY
+    if (legendWorldY + legendHeight > maxY) {
+        maxY = legendWorldY + legendHeight + padding;
+    }
+
     const contentWidth = maxX - minX;
     const contentHeight = maxY - minY;
     
@@ -296,6 +370,81 @@ function App() {
             contentLayer.add(bgRect);
             bgRect.moveToBottom();
         }
+
+        // Temporarily render the Legend Panel into the Konva Stage for export
+        // Since the legend is HTML, Konva doesn't see it. We must draw it manually.
+        const legendGroup = new Konva.Group({
+            x: legendWorldX,
+            y: legendWorldY,
+            scaleX: legendScale,
+            scaleY: legendScale,
+            id: 'temp-legend-export'
+        });
+
+        // Legend Background
+        legendGroup.add(new Konva.Rect({
+            x: 0, y: 0, width: 192, height: 340,
+            fill: '#e6e6e6', stroke: '#d1d5db', strokeWidth: 1,
+            cornerRadius: 4, shadowColor: 'black', shadowBlur: 4, shadowOpacity: 0.1
+        }));
+
+        // Legend Title
+        legendGroup.add(new Konva.Text({
+            x: 8, y: 8, text: 'TABLE', fontSize: 12, fontFamily: 'sans-serif', fill: '#4b5563'
+        }));
+
+        const legendItems = [
+            { text: 'POWER', color: '#dc2626' },
+            { text: 'GROUND', color: '#000000' },
+            { text: 'PHYSICAL PIN', color: '#0d9488' },
+            { text: 'CONTROL', color: '#ca8a04' },
+            { text: 'ANALOG', color: '#16a34a' },
+            { text: 'TIMER & CHANNEL', color: '#e11d48' },
+            { text: 'USART', color: '#1d4ed8' },
+            { text: 'SPI', color: '#9333ea' },
+            { text: 'I2C', color: '#0ea5e9' },
+            { text: 'CAN BUS', color: '#db2777' },
+            { text: 'USB', color: '#65a30d' },
+            { text: 'MISC', color: '#4b5563' },
+            { text: 'BOARD HARDWARE', color: '#ea580c' }
+        ];
+
+        let currentY = 24;
+        legendItems.forEach(item => {
+            legendGroup.add(new Konva.Rect({
+                x: 8, y: currentY, width: 176, height: 18,
+                fill: item.color, stroke: 'rgba(0,0,0,0.5)', strokeWidth: 1
+            }));
+            legendGroup.add(new Konva.Text({
+                x: 8, y: currentY + 4, width: 176, text: item.text,
+                fontSize: 10, fontFamily: 'sans-serif', fill: 'white', align: 'center'
+            }));
+            currentY += 20;
+        });
+
+        // Legend Footer (Lines)
+        currentY += 8;
+        legendGroup.add(new Konva.Line({ points: [8, currentY, 184, currentY], stroke: '#d1d5db', strokeWidth: 1 }));
+        currentY += 8;
+        
+        legendGroup.add(new Konva.Line({ points: [8, currentY+5, 28, currentY+5], stroke: 'black', strokeWidth: 1 }));
+        legendGroup.add(new Konva.Text({ x: 36, y: currentY, text: 'Standard Pin', fontSize: 10, fill: '#4b5563' }));
+        
+        currentY += 16;
+        // Approximate wave for PWM
+        legendGroup.add(new Konva.Line({ 
+            points: [8, currentY+5, 13, currentY, 18, currentY+5, 28, currentY+5], 
+            stroke: 'black', strokeWidth: 1, tension: 0.4 
+        }));
+        legendGroup.add(new Konva.Text({ x: 36, y: currentY, text: 'PWM Pin', fontSize: 10, fill: '#4b5563' }));
+
+        if (contentLayer) {
+            contentLayer.add(legendGroup);
+            contentLayer.draw();
+        }
+
+        // Wait a tiny bit for Konva to render the new group
+        await new Promise(resolve => setTimeout(resolve, 100));
 
         const dataUrl = stage.toDataURL({
             pixelRatio: 2, 
@@ -342,6 +491,10 @@ function App() {
         if (bgRect) {
             bgRect.destroy();
         }
+        const tempLegend = stage.findOne('#temp-legend-export');
+        if (tempLegend) {
+            tempLegend.destroy();
+        }
         if (gridLayer) {
             gridLayer.show();
         }
@@ -375,6 +528,7 @@ function App() {
           selectedPinId={selectedPinId}
           onSelectPin={selectPin}
           onUpdatePin={updatePin}
+          onDoubleClickPin={handlePinDoubleClick}
           isAddingPin={isAddingPin}
           onCreatePin={createPinAt}
           scale={scale}
@@ -385,7 +539,6 @@ function App() {
         <Sidebar 
           selectedPin={selectedPin} 
           onUpdatePin={updatePin} 
-          pins={pins}
           scale={scale}
         />
       </div>

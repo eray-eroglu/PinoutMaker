@@ -11,6 +11,7 @@ interface CanvasStageProps {
   selectedPinId: string | null;
   onSelectPin: (id: string | null) => void;
   onUpdatePin: (pin: PinData) => void;
+  onDoubleClickPin: (id: string, currentText: string) => void;
   isAddingPin?: boolean;
   onCreatePin?: (x: number, y: number) => void;
   scale: number;
@@ -26,6 +27,7 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
   selectedPinId,
   onSelectPin,
   onUpdatePin,
+  onDoubleClickPin,
   isAddingPin = false,
   onCreatePin,
   scale,
@@ -134,19 +136,17 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
     // Find nearby alignments
     const THRESHOLD = 10 / scale; // Snap within 10 screen pixels
     
-    // We need to know the dimensions of the pins to calculate gaps between EDGES.
-    // However, PinData only stores x,y (top-left).
-    // Let's assume a standard size or measure it.
-    // In PinComponent, the rect is rendered. We don't have exact width in State easily.
-    // But aligning the "top-left" points (origin) equidistantly is usually what people mean 
-    // when they say "equal spacing" in these simple tools, unless the boxes vary wildly in size.
-    // Let's stick to "Origin to Origin" distance for now, which is "Top-Left to Top-Left".
-    
     const verticalGuides: number[] = [];
     const horizontalGuides: number[] = [];
     
     let snappedX = x;
     let snappedY = y;
+
+    const currentPin = pins.find(p => p.id === id);
+    if (!currentPin) return { x, y };
+
+    // Determine if the pin is on the left side of its anchor
+    const isLeftSide = x < currentPin.targetX;
 
     // 1. Standard Alignment (Snap to common existing X or Y)
     pins.forEach(otherPin => {
@@ -158,10 +158,49 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
             snappedY = otherPin.y; 
         }
 
-        // Vertical Alignment (x matches)
-        if (Math.abs(otherPin.x - x) < THRESHOLD) {
-            verticalGuides.push(otherPin.x);
-            snappedX = otherPin.x;
+        // Vertical Alignment
+        // If the pin is on the left side, we want to align its RIGHT edge with other left-side pins.
+        // Since we don't have exact rendered widths in state, we can use the labelWidth property
+        // if it exists, or estimate it.
+        // For now, we will align the left edges (x) for right-side pins,
+        // and for left-side pins, we will try to align their right edges if we know their widths.
+        
+        const otherIsLeftSide = otherPin.x < otherPin.targetX;
+
+        if (isLeftSide && otherIsLeftSide) {
+            // Both on left side. Try to align right edges.
+            // Right edge = x + width
+            // We need: x + currentWidth = otherPin.x + otherWidth
+            // So: x = otherPin.x + otherWidth - currentWidth
+            
+            // If we have the widths saved in the pin data (we added this to types.ts earlier)
+            if (currentPin.labelWidth && otherPin.labelWidth) {
+                // Convert unscaled labelWidth to world coordinates
+                const currentWorldWidth = currentPin.labelWidth / scale;
+                const otherWorldWidth = otherPin.labelWidth / scale;
+
+                const currentRightEdge = x + currentWorldWidth;
+                const otherRightEdge = otherPin.x + otherWorldWidth;
+                
+                if (Math.abs(otherRightEdge - currentRightEdge) < THRESHOLD) {
+                    // Snap right edges
+                    snappedX = otherPin.x + otherWorldWidth - currentWorldWidth;
+                    // Draw guide at the right edge
+                    verticalGuides.push(otherRightEdge);
+                }
+            } else {
+                // Fallback to left edge alignment if widths are unknown
+                if (Math.abs(otherPin.x - x) < THRESHOLD) {
+                    verticalGuides.push(otherPin.x);
+                    snappedX = otherPin.x;
+                }
+            }
+        } else if (!isLeftSide && !otherIsLeftSide) {
+            // Both on right side. Align left edges (standard).
+            if (Math.abs(otherPin.x - x) < THRESHOLD) {
+                verticalGuides.push(otherPin.x);
+                snappedX = otherPin.x;
+            }
         }
     });
 
@@ -250,6 +289,7 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
               isSelected={pin.id === selectedPinId}
               onSelect={(id) => onSelectPin(id)}
               onUpdate={onUpdatePin}
+              onDoubleClick={onDoubleClickPin}
               onDragMove={(id, x, y) => handlePinDragMove(id, x, y)}
               onDragEnd={handlePinDragEnd}
             />
@@ -279,6 +319,41 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
       </Stage>
       <div className='absolute bottom-2 right-2 pointer-events-none text-gray-500 text-xs bg-white/80 p-1 rounded shadow'>
         Scale: {scale.toFixed(2)}x
+      </div>
+
+      {/* Legend Panel */}
+      <div className="absolute top-4 left-4 bg-[#e6e6e6] border border-gray-300 rounded shadow-md p-2 w-48 pointer-events-none opacity-90">
+        <h3 className="text-xs font-normal text-gray-600 mb-2 uppercase tracking-wider">TABLE</h3>
+        <div className="flex flex-col gap-[2px]">
+          <div className="flex items-center justify-center bg-[#dc2626] text-white text-[10px] font-normal py-1 border border-black/50">POWER</div>
+          <div className="flex items-center justify-center bg-[#000000] text-white text-[10px] font-normal py-1 border border-black/50">GROUND</div>
+          <div className="flex items-center justify-center bg-[#0d9488] text-white text-[10px] font-normal py-1 border border-black/50">PHYSICAL PIN</div>
+          <div className="flex items-center justify-center bg-[#ca8a04] text-white text-[10px] font-normal py-1 border border-black/50">CONTROL</div>
+          <div className="flex items-center justify-center bg-[#16a34a] text-white text-[10px] font-normal py-1 border border-black/50">ANALOG</div>
+          <div className="flex items-center justify-center bg-[#e11d48] text-white text-[10px] font-normal py-1 border border-black/50">TIMER & CHANNEL</div>
+          <div className="flex items-center justify-center bg-[#1d4ed8] text-white text-[10px] font-normal py-1 border border-black/50">USART</div>
+          <div className="flex items-center justify-center bg-[#9333ea] text-white text-[10px] font-normal py-1 border border-black/50">SPI</div>
+          <div className="flex items-center justify-center bg-[#0ea5e9] text-white text-[10px] font-normal py-1 border border-black/50">I2C</div>
+          <div className="flex items-center justify-center bg-[#db2777] text-white text-[10px] font-normal py-1 border border-black/50">CAN BUS</div>
+          <div className="flex items-center justify-center bg-[#65a30d] text-white text-[10px] font-normal py-1 border border-black/50">USB</div>
+          <div className="flex items-center justify-center bg-[#4b5563] text-white text-[10px] font-normal py-1 border border-black/50">MISC</div>
+          <div className="flex items-center justify-center bg-[#ea580c] text-white text-[10px] font-normal py-1 border border-black/50">BOARD HARDWARE</div>
+        </div>
+        
+        <div className="mt-2 pt-2 border-t border-gray-300 flex flex-col gap-1 text-[10px] text-gray-600">
+          <div className="flex items-center gap-2">
+            <svg width="20" height="10" className="overflow-visible">
+              <path d="M 0 5 L 20 5" stroke="black" strokeWidth="1" />
+            </svg>
+            <span>Standard Pin</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <svg width="20" height="10" className="overflow-visible">
+              <path d="M 0 5 Q 5 0, 10 5 T 20 5" stroke="black" strokeWidth="1" fill="none" />
+            </svg>
+            <span>PWM Pin</span>
+          </div>
+        </div>
       </div>
     </div>
   );

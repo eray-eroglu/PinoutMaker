@@ -2,6 +2,7 @@ import React, { useRef, useLayoutEffect, useEffect } from 'react';
 import { Label, Tag, Text, Circle, Line } from 'react-konva';
 import Konva from 'konva';
 import type { PinData } from '../types';
+import { calculateManhattanPath, calculateWavePoints } from '../utils/lineUtils';
 
 interface PinComponentProps {
   pin: PinData;
@@ -14,6 +15,7 @@ interface PinComponentProps {
   onUpdate: (pin: PinData) => void;
   onDragMove?: (id: string, x: number, y: number) => { x: number, y: number } | void;
   onDragEnd?: () => void;
+  onDoubleClick: (id: string, currentText: string) => void;
 }
 
 export const PinComponent: React.FC<PinComponentProps> = ({
@@ -24,23 +26,42 @@ export const PinComponent: React.FC<PinComponentProps> = ({
   onUpdate,
   onDragMove,
   onDragEnd,
+  onDoubleClick,
 }) => {
   const labelRef = useRef<Konva.Label>(null);
   const anchorRef = useRef<Konva.Circle>(null);
   const lineRef = useRef<Konva.Line>(null);
+  const lastClickTimeRef = useRef(0);
 
   const invScale = 1 / scale;
 
-  // AUTO-MIGRATION:
+  // AUTO-MIGRATION & WIDTH CALCULATION:
   // If pin lacks labelDx/labelDy, calculate them now based on current x,y and scale.
-  // This "freezes" existing pins to their current visual distance.
+  // Also save the rendered width/height so CanvasStage can use it for right-edge alignment.
   useEffect(() => {
+    let needsUpdate = false;
+    const updates: Partial<PinData> = {};
+
     if (pin.labelDx === undefined || pin.labelDy === undefined) {
-      const dx = (pin.x - pin.targetX) * scale;
-      const dy = (pin.y - pin.targetY) * scale;
-      onUpdate({ ...pin, labelDx: dx, labelDy: dy });
+      updates.labelDx = (pin.x - pin.targetX) * scale;
+      updates.labelDy = (pin.y - pin.targetY) * scale;
+      needsUpdate = true;
     }
-  }, []); // Run once on mount
+
+    if (labelRef.current) {
+      const w = labelRef.current.width();
+      const h = labelRef.current.height();
+      if (pin.labelWidth !== w || pin.labelHeight !== h) {
+        updates.labelWidth = w;
+        updates.labelHeight = h;
+        needsUpdate = true;
+      }
+    }
+
+    if (needsUpdate) {
+      onUpdate({ ...pin, ...updates });
+    }
+  }, [pin.text]); // Run on mount and when text changes
 
   // Calculate position: Prefer visual offset (dx/dy), fallback to legacy x,y
   const hasOffset = pin.labelDx !== undefined && pin.labelDy !== undefined;
@@ -75,82 +96,14 @@ export const PinComponent: React.FC<PinComponentProps> = ({
       const x2 = anchorPos.x;
       const y2 = anchorPos.y;
 
-      // Basit L-Şekli (Manhattan Routing) Algoritması
-      // Etiketin konumuna göre en mantıklı köşeli yolu buluruz.
-      let points: number[] = [];
-
-      const dx = x2 - x1;
-      const dy = y2 - y1;
-      
-      // Manhattan Logic:
-      // Eğer yatay mesafe daha büyükse, önce YATAY git sonra DİKEY.
-      // Eyer dikey mesafe daha büyükse, önce DİKEY git sonra YATAY.
-      if (Math.abs(dx) > Math.abs(dy)) {
-          // Horizontal Dominant: (x1,y1) -> (x2, y1) -> (x2, y2)
-          points = [x1, y1, x2, y1, x2, y2];
-      } else {
-          // Vertical Dominant: (x1,y1) -> (x1, y2) -> (x2, y2)
-          points = [x1, y1, x1, y2, x2, y2];
-      }
+      let points = calculateManhattanPath(x1, y1, x2, y2);
 
       // PWM Dalga Efekti
       if (pin.isPwm) {
-        const wavePoints: number[] = [];
-        
-        // points dizisi [x1, y1, mx, my, x2, y2] şeklindedir (3 nokta, 2 segment).
-        // Segmentleri tek tek işleyip dalgalandıracağız.
-        for (let i = 0; i < points.length - 2; i += 2) {
-            const sx = points[i];
-            const sy = points[i+1];
-            const ex = points[i+2];
-            const ey = points[i+3];
-            
-            const segDx = ex - sx;
-            const segDy = ey - sy;
-            const dist = Math.sqrt(segDx*segDx + segDy*segDy);
-            
-            // Çok kısa segmentleri atla veya düz çiz
-            if (dist < 1) { 
-                continue; 
-            }
-
-            const nx = segDx / dist;
-            const ny = segDy / dist;
-            const px = -ny;
-            const py = nx;
-            
-            const desiredWaveLength = 10; 
-            const cycleCount = Math.max(1, Math.round(dist / (desiredWaveLength / scale)));
-            const waveLength = dist / cycleCount;
-            const amplitude = 3 / scale;
-            
-            // Eğer segment çok kısaysa dalga yapma
-            if (dist < (15 / scale)) {
-                 wavePoints.push(sx, sy);
-                 wavePoints.push(ex, ey);
-                 continue;
-            }
-
-            const step = Math.max(1 / scale, dist / (cycleCount * 8));
-            
-            // Segment başlangıcı
-            if (i === 0) wavePoints.push(sx, sy);
-            
-            for (let d = 0; d <= dist; d += step) {
-                 const waveOffset = amplitude * Math.sin((d / waveLength) * Math.PI * 2);
-                 const wx = sx + nx * d + px * waveOffset;
-                 const wy = sy + ny * d + py * waveOffset;
-                 wavePoints.push(wx, wy);
-            }
-            // Segment bitişinden emin ol
-             wavePoints.push(ex, ey);
-        }
-        
-        lineRef.current.points(wavePoints);
-      } else {
-          // Düz L-Çizgisi
-          lineRef.current.points(points);
+        points = calculateWavePoints(points, scale);
       }
+      
+      lineRef.current.points(points);
       
       // EKRANI ZORLA YENİLE (Titremeyi ve geri atmayı engeller)
       lineRef.current.getLayer()?.batchDraw(); 
@@ -160,6 +113,7 @@ export const PinComponent: React.FC<PinComponentProps> = ({
   useLayoutEffect(() => {
     updateLine();
   }, [currentLabelX, currentLabelY, pin.targetX, pin.targetY, pin.text, scale, pin.isPwm]);
+
 
   const handleDragMove = () => {
     // Notify parent about new position during drag
@@ -191,12 +145,18 @@ export const PinComponent: React.FC<PinComponentProps> = ({
     const newDx = (newX - pin.targetX) * scale;
     const newDy = (newY - pin.targetY) * scale;
 
+    // Save the rendered width and height so CanvasStage can use it for right-edge alignment
+    const width = labelRef.current?.width() || 0;
+    const height = labelRef.current?.height() || 0;
+
     onUpdate({
       ...pin,
       x: newX, // Keep legacy synced just in case
       y: newY,
       labelDx: newDx,
-      labelDy: newDy
+      labelDy: newDy,
+      labelWidth: width,
+      labelHeight: height
     });
   };
 
@@ -219,8 +179,24 @@ export const PinComponent: React.FC<PinComponentProps> = ({
 
   const handleSelect = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
     e.cancelBubble = true;
-    onSelect(pin.id, e);
+    
+    // Manual double click detection
+    const currentTime = new Date().getTime();
+    const timeDiff = currentTime - lastClickTimeRef.current;
+
+    if (timeDiff < 300) {
+      onDoubleClick(pin.id, pin.text);
+      lastClickTimeRef.current = 0; // Reset
+    } else {
+      lastClickTimeRef.current = currentTime;
+      onSelect(pin.id, e);
+    }
   };
+  
+  // Keep handleDoubleClick just in case, but removing from JSX usage or keep it as backup?
+  // Ideally manual detection in handleSelect covers it.
+  // Actually, let's remove the separate handleDoubleClick and the onDblClick props to avoid double firing.
+
 
   return (
     <>
@@ -259,8 +235,6 @@ export const PinComponent: React.FC<PinComponentProps> = ({
         draggable
         scaleX={invScale}
         scaleY={invScale}
-        // Use dragBoundFunc for robust snapping (prevents jitter) - optional improvement
-        // but handleDragMove is easier to implement for now.
         onDragMove={handleDragMove}
         onDragEnd={handleLabelDragEnd}
         onClick={handleSelect}
@@ -276,9 +250,14 @@ export const PinComponent: React.FC<PinComponentProps> = ({
           stroke={isSelected ? '#333' : undefined}
           strokeWidth={isSelected ? 1.5 : 0}
           strokeScaleEnabled={false}
+          listening={true}
+          onClick={handleSelect}
+          onTap={handleSelect}
         />
         <Text
           text={pin.text}
+          onClick={handleSelect}
+          onTap={handleSelect}
           fill={
             ['#FFD700', '#00FFFF', '#7FFFD4', '#F0F0F0', '#FFFFFF'].includes(pin.color)
               ? 'black'
@@ -288,16 +267,9 @@ export const PinComponent: React.FC<PinComponentProps> = ({
           fontFamily='Inter, sans-serif'
           fontSize={12}
           fontStyle='600'
-          // ---- EKLENEN / DEĞİŞTİRİLEN KISIM BAŞLANGICI ----
-          
-          // Eğer metin 6 karakter veya daha kısaysa (GND, 3V3, GPIO15 vs.) 
-          // kutunun iç genişliğini standart 55 piksel yap. Uzunsa otomatik bırak.
-          width={pin.text.length <= 6 ? 55 : undefined} 
-          
-          // Metni bu 55 piksellik alanın tam ortasına hizala
+          width={pin.text.length <= 6 ? 60 : undefined} 
           align='center' 
-          
-          // ---- EKLENEN KISIM BİTİŞİ ----
+          listening={true}
         />
       </Label>
     </>
