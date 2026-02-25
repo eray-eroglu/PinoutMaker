@@ -78,7 +78,8 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
       // Actually, if we set image x=0, y=0 to be TopLeft, rotation is hard.
       // Let's set Image x=0, y=0 to be CENTER of image.
     }
-  }, [image, imageRotation]); // Removed width and height from dependencies
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [image, imageRotation]);
 
   const handleWheel = (e: Konva.KonvaEventObject<WheelEvent>) => {
     e.evt.preventDefault();

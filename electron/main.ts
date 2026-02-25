@@ -6,7 +6,7 @@ function createWindow() {
   const win = new BrowserWindow({
     width: 1200,
     height: 800,
-    icon: path.join(__dirname, '../public/cpu.png'),
+    icon: path.join(__dirname, process.env.VITE_DEV_SERVER_URL ? '../public/cpu.png' : '../dist/cpu.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,

@@ -74,7 +74,7 @@ export const PinComponent: React.FC<PinComponentProps> = ({
     ? pin.targetY + (pin.labelDy! / scale) 
     : pin.y;
 
-  const updateLine = () => {
+  const updateLine = React.useCallback(() => {
     if (labelRef.current && anchorRef.current && lineRef.current) {
       const labelNode = labelRef.current;
       const anchorNode = anchorRef.current;
@@ -108,11 +108,12 @@ export const PinComponent: React.FC<PinComponentProps> = ({
       // EKRANI ZORLA YENİLE (Titremeyi ve geri atmayı engeller)
       lineRef.current.getLayer()?.batchDraw(); 
     }
-  };
+  }, [pin.isPwm, scale]); // Note: We read positions from refs directly (labelNode.x()) which is updated by Konva during drag.
+                          // However, for initial render or props change, we need to trigger it.
 
   useLayoutEffect(() => {
     updateLine();
-  }, [currentLabelX, currentLabelY, pin.targetX, pin.targetY, pin.text, scale, pin.isPwm]);
+  }, [currentLabelX, currentLabelY, pin.targetX, pin.targetY, pin.text, scale, pin.isPwm, updateLine]);
 
 
   const handleDragMove = () => {

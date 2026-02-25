@@ -82,7 +82,7 @@ function App() {
     setSelectedPinId(id);
   };
   
-  const handlePinDoubleClick = (id: string, currentText: string) => {
+  const handlePinDoubleClick = (id: string) => {
     // When double clicking a pin, we just want to ensure it is selected
     // so that the sidebar input becomes active.
     // We can also focus the sidebar input programmatically if needed.
@@ -209,12 +209,7 @@ function App() {
 
       // AUTO-MIGRATION REMOVE: Users reported pins shifting on every load.
       // We will trust the saved positions.
-      const migratedPins = (data.pins || []).map(pin => ({
-        ...pin,
-        // Ensure legacy projects have labelDx/Dy initialized if missing, 
-        // but do NOT shift existing positions if they are already set.
-        // PinComponent handles the initialization of labelDx/Dy if undefined.
-      }));
+      // const migratedPins = (data.pins || []).map(pin => ({ ... }));
 
       setPins(data.pins || []);
       setImageRotation(data.rotation || 0);
@@ -485,7 +480,7 @@ function App() {
 
     } catch (e) {
         console.error("PDF Export failed", e);
-        alert("Failed to export PDF: " + (e as any).message);
+        alert("Failed to export PDF: " + (e instanceof Error ? e.message : String(e)));
     } finally {
         // Cleanup
         if (bgRect) {
