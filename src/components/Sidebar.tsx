@@ -3,8 +3,11 @@ import type { PinData } from '../types';
 
 interface SidebarProps {
   selectedPin: PinData | null;
-  onUpdatePin: (pin: PinData) => void;
+  onUpdatePin: (pin: PinData, saveHistory?: boolean) => void;
+  onPushHistory: () => void;
   scale: number;
+  gapSize: number;
+  onGapSizeChange: (size: number) => void;
 }
 
 const COLORS = [
@@ -42,7 +45,7 @@ const getSmartColor = (text: string): string | null => {
   return null;
 };
 
-export const Sidebar = ({ selectedPin, onUpdatePin, scale }: SidebarProps) => {
+export const Sidebar = ({ selectedPin, onUpdatePin, onPushHistory, scale, gapSize, onGapSizeChange }: SidebarProps) => {
   const [customStep, setCustomStep] = useState<number>(5);
   const nameInputRef = useRef<HTMLInputElement>(null);
 
@@ -67,7 +70,7 @@ export const Sidebar = ({ selectedPin, onUpdatePin, scale }: SidebarProps) => {
         ...selectedPin, 
         text: newText,
         color: smartColor || selectedPin.color 
-      });
+      }, false);
     }
   };
 
@@ -126,6 +129,26 @@ export const Sidebar = ({ selectedPin, onUpdatePin, scale }: SidebarProps) => {
     return (
       <div className='w-80 bg-gray-50 border-l border-gray-300 flex flex-col p-4 shrink-0 h-full'>
         <h2 className='text-lg font-semibold mb-4 text-gray-700'>
+          Project Settings
+        </h2>
+        <div className="mb-6">
+          <label className='block text-sm font-medium text-gray-600 mb-2'>
+            Global Gap Size (px)
+          </label>
+          <div className="flex items-center gap-2">
+            <input 
+              type="number" 
+              min="0" 
+              max="100" 
+              value={gapSize}
+              onChange={(e) => onGapSizeChange(Number(e.target.value) || 12)}
+              className="w-20 border border-gray-300 rounded px-2 py-1 text-sm outline-none focus:border-blue-500"
+            />
+            <span className="text-xs text-gray-500">Distance between snapped pins</span>
+          </div>
+        </div>
+
+        <h2 className='text-lg font-semibold mt-6 mb-4 text-gray-700'>
           Pin Properties
         </h2>
         <div className='text-gray-400 text-sm'>
@@ -137,6 +160,28 @@ export const Sidebar = ({ selectedPin, onUpdatePin, scale }: SidebarProps) => {
 
   return (
     <div className='w-80 bg-gray-50 border-l border-gray-300 flex flex-col p-4 shrink-0 h-full'>
+      <h2 className='text-lg font-semibold mb-4 text-gray-700'>
+        Project Settings
+      </h2>
+      <div className="mb-6">
+        <label className='block text-sm font-medium text-gray-600 mb-2'>
+          Global Gap Size (px)
+        </label>
+        <div className="flex items-center gap-2">
+          <input 
+            type="number" 
+            min="0" 
+            max="100" 
+            value={gapSize}
+            onChange={(e) => onGapSizeChange(Number(e.target.value) || 12)}
+            className="w-20 border border-gray-300 rounded px-2 py-1 text-sm outline-none focus:border-blue-500"
+          />
+          <span className="text-xs text-gray-500">Distance between pins</span>
+        </div>
+      </div>
+
+      <hr className="my-4 border-gray-300" />
+
       <h2 className='text-lg font-semibold mb-4 text-gray-700'>
         Pin Properties
       </h2>
@@ -152,6 +197,7 @@ export const Sidebar = ({ selectedPin, onUpdatePin, scale }: SidebarProps) => {
             className='w-full border border-gray-300 rounded px-2 py-1.5 text-sm outline-none focus:border-blue-500'
             value={selectedPin.text}
             onChange={handleNameChange}
+            onFocus={() => onPushHistory()}
           />
         </div>
 

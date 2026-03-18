@@ -33,6 +33,19 @@ function createWindow() {
     else {
         win.loadFile(path_1.default.join(__dirname, '../dist/index.html'));
     }
+    win.on('close', (e) => {
+        const choice = electron_1.dialog.showMessageBoxSync(win, {
+            type: 'question',
+            buttons: ['Yes', 'No'],
+            title: 'Exit Application',
+            message: 'Are you sure you want to exit the application ? \nUnsaved changes may be lost.',
+            defaultId: 1,
+            cancelId: 1
+        });
+        if (choice === 1) {
+            e.preventDefault();
+        }
+    });
 }
 electron_1.app.whenReady().then(() => {
     electron_1.ipcMain.handle('dialog:saveFile', (_, content) => __awaiter(void 0, void 0, void 0, function* () {
@@ -40,9 +53,19 @@ electron_1.app.whenReady().then(() => {
             filters: [{ name: 'Pinout Project', extensions: ['json'] }],
         });
         if (canceled || !filePath)
-            return false;
+            return { success: false, path: null };
         fs_1.default.writeFileSync(filePath, content, 'utf-8');
-        return true;
+        return { success: true, path: filePath };
+    }));
+    electron_1.ipcMain.handle('dialog:saveFileDirect', (_, filePath, content) => __awaiter(void 0, void 0, void 0, function* () {
+        try {
+            fs_1.default.writeFileSync(filePath, content, 'utf-8');
+            return { success: true };
+        }
+        catch (e) {
+            console.error('Failed to quick save:', e);
+            return { success: false };
+        }
     }));
     electron_1.ipcMain.handle('dialog:loadFile', () => __awaiter(void 0, void 0, void 0, function* () {
         const { canceled, filePaths } = yield electron_1.dialog.showOpenDialog({
@@ -50,9 +73,9 @@ electron_1.app.whenReady().then(() => {
             filters: [{ name: 'Pinout Project', extensions: ['json'] }],
         });
         if (canceled || filePaths.length === 0)
-            return null;
+            return { content: null, path: null };
         const content = fs_1.default.readFileSync(filePaths[0], 'utf-8');
-        return content;
+        return { content, path: filePaths[0] };
     }));
     electron_1.ipcMain.handle('dialog:savePdf', (_, buffer) => __awaiter(void 0, void 0, void 0, function* () {
         const { canceled, filePath } = yield electron_1.dialog.showSaveDialog({

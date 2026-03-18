@@ -12,6 +12,8 @@ function App() {
   const [selectedPinId, setSelectedPinId] = useState<string | null>(null);
   const [imageRotation, setImageRotation] = useState(0);
   const [isAddingPin, setIsAddingPin] = useState(false);
+  const [currentFilePath, setCurrentFilePath] = useState<string | null>(null);
+  const [gapSize, setGapSize] = useState<number>(12);
   
   // Lifted state for CanvasStage
   const [scale, setScale] = useState(1);
@@ -19,6 +21,33 @@ function App() {
 
   const stageRef = useRef<Konva.Stage>(null);
   const copiedPinRef = useRef<PinData | null>(null); // For Ctrl+C/V
+
+  // Undo / Redo History
+  const pastRef = useRef<PinData[][]>([]);
+  const futureRef = useRef<PinData[][]>([]);
+
+  const handlePushHistory = () => {
+    pastRef.current.push([...pins]);
+    futureRef.current = [];
+  };
+
+  const handleUndo = () => {
+    if (pastRef.current.length === 0) return;
+    setPins((currentPins) => {
+      const prev = pastRef.current.pop()!;
+      futureRef.current.push([...currentPins]);
+      return prev;
+    });
+  };
+
+  const handleRedo = () => {
+    if (futureRef.current.length === 0) return;
+    setPins((currentPins) => {
+      const next = futureRef.current.pop()!;
+      pastRef.current.push([...currentPins]);
+      return next;
+    });
+  };
 
   const handleImageUpload = (file: File) => {
     const reader = new FileReader();
@@ -62,18 +91,32 @@ function App() {
       color: '#ef4444', // red-500
       isPwm: false,
     };
-    setPins([...pins, newPin]);
+    setPins((prev) => {
+      pastRef.current.push([...prev]);
+      futureRef.current = [];
+      return [...prev, newPin];
+    });
     setSelectedPinId(newPin.id);
     setIsAddingPin(false);
   };
 
-  const updatePin = (updatedPin: PinData) => {
-    setPins(pins.map((pin) => (pin.id === updatedPin.id ? updatedPin : pin)));
+  const updatePin = (updatedPin: PinData, saveHistory = true) => {
+    setPins((prevPins) => {
+      if (saveHistory) {
+        pastRef.current.push([...prevPins]);
+        futureRef.current = [];
+      }
+      return prevPins.map((pin) => (pin.id === updatedPin.id ? updatedPin : pin));
+    });
   };
 
   const deletePin = () => {
     if (selectedPinId) {
-      setPins(pins.filter((pin) => pin.id !== selectedPinId));
+      setPins((prevPins) => {
+        pastRef.current.push([...prevPins]);
+        futureRef.current = [];
+        return prevPins.filter((pin) => pin.id !== selectedPinId);
+      });
       setSelectedPinId(null);
     }
   };
@@ -123,7 +166,11 @@ function App() {
             return;
           }
           
-          setPins((prevPins) => prevPins.filter((p) => p.id !== selectedPinId));
+          setPins((prevPins) => {
+            pastRef.current.push([...prevPins]);
+            futureRef.current = [];
+            return prevPins.filter((p) => p.id !== selectedPinId);
+          });
           setSelectedPinId(null);
         }
       }
@@ -156,18 +203,83 @@ function App() {
             text: original.text, // Keep same name for bulk creation
           };
 
-          setPins((prevPins) => [...prevPins, newPin]);
+          setPins((prevPins) => {
+            pastRef.current.push([...prevPins]);
+            futureRef.current = [];
+            return [...prevPins, newPin];
+          });
           setSelectedPinId(newId);
           
           // Update clipboard to the new pin so the next paste chains from this one
           copiedPinRef.current = newPin;
         }
       }
+
+      // Undo (Ctrl+Z)
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z') {
+        const activeElement = document.activeElement as HTMLElement | null;
+        if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA' || activeElement.isContentEditable)) {
+          return;
+        }
+        e.preventDefault();
+        handleUndo();
+      }
+
+      // Redo (Ctrl+Y or Ctrl+Shift+Z)
+      if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) {
+        const activeElement = document.activeElement as HTMLElement | null;
+        if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA' || activeElement.isContentEditable)) {
+          return;
+        }
+        e.preventDefault();
+        handleRedo();
+      }
+      // Save (Ctrl+S)
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        handleQuickSave();
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedPinId, pins]);
+  }, [selectedPinId, pins, image, imageRotation, scale, position, currentFilePath]);
+
+  const handleQuickSave = async () => {
+    if (!window.electronAPI) return;
+    
+    let imageData = '';
+    if (image) {
+      imageData = image.src; 
+    }
+
+    const projectData: ProjectData = {
+      image: imageData,
+      pins,
+      rotation: imageRotation,
+      scale,
+      position,
+      gapSize
+    };
+
+    const json = JSON.stringify(projectData, null, 2);
+
+    if (currentFilePath) {
+      // Direct save
+      const result = await window.electronAPI.saveFileDirect(currentFilePath, json);
+      if (result.success) {
+        console.log('Quick save successful');
+      } else {
+        alert('Failed to save file.');
+      }
+    } else {
+      // Fallback to Save As
+      const result = await window.electronAPI.saveFile(json);
+      if (result.success && result.path) {
+        setCurrentFilePath(result.path);
+      }
+    }
+  };
 
   const handleSaveProject = async () => {
     if (!window.electronAPI) return;
@@ -183,21 +295,29 @@ function App() {
       pins,
       rotation: imageRotation,
       scale,
-      position
+      position,
+      gapSize
     };
 
     const json = JSON.stringify(projectData, null, 2);
-    await window.electronAPI.saveFile(json);
+    const result = await window.electronAPI.saveFile(json);
+    if (result.success && result.path) {
+      setCurrentFilePath(result.path);
+    }
   };
 
   const handleLoadProject = async () => {
     if (!window.electronAPI) return;
     
-    const json = await window.electronAPI.loadFile();
-    if (!json) return;
+    const result = await window.electronAPI.loadFile();
+    if (!result || !result.content) return;
+    
+    if (result.path) {
+      setCurrentFilePath(result.path);
+    }
 
     try {
-      const data: ProjectData = JSON.parse(json);
+      const data: ProjectData = JSON.parse(result.content);
       
       if (data.image) {
         const img = new Image();
@@ -207,14 +327,13 @@ function App() {
         setImage(null);
       }
 
-      // AUTO-MIGRATION REMOVE: Users reported pins shifting on every load.
-      // We will trust the saved positions.
       // const migratedPins = (data.pins || []).map(pin => ({ ... }));
 
       setPins(data.pins || []);
       setImageRotation(data.rotation || 0);
       setScale(data.scale || 1);
       setPosition(data.position || { x: 0, y: 0 });
+      setGapSize(data.gapSize ?? 12);
       
     } catch (e) {
       console.error("Failed to parse project file", e);
@@ -530,11 +649,15 @@ function App() {
           setScale={setScale}
           position={position}
           setPosition={setPosition}
+          gapSize={gapSize}
         />
         <Sidebar 
           selectedPin={selectedPin} 
           onUpdatePin={updatePin} 
+          onPushHistory={handlePushHistory}
           scale={scale}
+          gapSize={gapSize}
+          onGapSizeChange={setGapSize}
         />
       </div>
     </div>

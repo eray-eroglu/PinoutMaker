@@ -19,13 +19,15 @@ export interface ProjectData {
   rotation: number;
   scale: number;
   position: { x: number; y: number };
+  gapSize?: number;
 }
 
 declare global {
   interface Window {
     electronAPI?: {
-      saveFile: (content: string) => Promise<boolean>;
-      loadFile: () => Promise<string | null>;
+      saveFile: (content: string) => Promise<{ success: boolean; path: string | null }>;
+      saveFileDirect: (path: string, content: string) => Promise<{ success: boolean }>;
+      loadFile: () => Promise<{ content: string | null; path: string | null }>;
       savePdf: (buffer: ArrayBuffer) => Promise<boolean>;
     };
   }

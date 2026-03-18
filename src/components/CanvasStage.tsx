@@ -1,5 +1,5 @@
 import { useEffect, forwardRef, useState  } from 'react';
-import { Stage, Layer, Line, Image as KonvaImage  } from 'react-konva';
+import { Stage, Layer, Line, Rect, Image as KonvaImage  } from 'react-konva';
 import Konva from 'konva';
 import type { PinData } from '../types';
 import { PinComponent } from './PinComponent';
@@ -10,7 +10,7 @@ interface CanvasStageProps {
   pins: PinData[];
   selectedPinId: string | null;
   onSelectPin: (id: string | null) => void;
-  onUpdatePin: (pin: PinData) => void;
+  onUpdatePin: (pin: PinData, saveHistory?: boolean) => void;
   onDoubleClickPin: (id: string, currentText: string) => void;
   isAddingPin?: boolean;
   onCreatePin?: (x: number, y: number) => void;
@@ -18,6 +18,7 @@ interface CanvasStageProps {
   setScale: (scale: number) => void;
   position: { x: number; y: number };
   setPosition: (pos: { x: number; y: number }) => void;
+  gapSize: number;
 }
 
 export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
@@ -34,6 +35,7 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
   setScale,
   position,
   setPosition,
+  gapSize,
 }, ref) => {
 
   const [dimensions, setDimensions] = useState({
@@ -131,14 +133,29 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
   };
 
   // Alignment Guides
-  const [guides, setGuides] = useState<{ vertical: number[], horizontal: number[] }>({ vertical: [], horizontal: [] });
+  const [guides, setGuides] = useState<{ vertical: number[], horizontal: number[], gaps: Array<{x: number, y: number, width: number}> }>({ vertical: [], horizontal: [], gaps: [] });
 
-  const handlePinDragMove = (id: string, x: number, y: number) => {
+  const handlePinDragMove = (id: string, x: number, y: number, isCtrlPressed: boolean) => {
+    // If Ctrl is pressed, disable snapping completely
+    if (isCtrlPressed) {
+      setGuides((prev) => {
+        if (prev.vertical.length === 0 && prev.horizontal.length === 0 && prev.gaps.length === 0) {
+          return prev;
+        }
+        return { vertical: [], horizontal: [], gaps: [] };
+      });
+      return { x, y };
+    }
+
     // Find nearby alignments
     const THRESHOLD = 10 / scale; // Snap within 10 screen pixels
     
+    // Actually, fixed world units is much better for printing consistency across zooms.
+    const FIXED_GAP = gapSize; // Use the configured gap size
+    
     const verticalGuides: number[] = [];
     const horizontalGuides: number[] = [];
+    const gapGuides: Array<{x: number, y: number, width: number}> = [];
     
     let snappedX = x;
     let snappedY = y;
@@ -148,11 +165,49 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
 
     // Determine if the pin is on the left side of its anchor
     const isLeftSide = x < currentPin.targetX;
+    
+    // Convert unscaled labelWidth to world coordinates for current pin
+    const currentWorldWidth = (currentPin.labelWidth || 60) / scale;
 
     // 1. Standard Alignment (Snap to common existing X or Y)
     pins.forEach(otherPin => {
         if (otherPin.id === id) return;
         
+        const otherWorldWidth = (otherPin.labelWidth || 60) / scale;
+        const otherLeftEdge = otherPin.x;
+        const otherRightEdge = otherPin.x + otherWorldWidth;
+
+        // --- GAP SNAPPING (Horizontal spacing next to another pin) ---
+        // If they are somewhat vertically aligned (Y is close)
+        if (Math.abs(otherPin.y - y) < THRESHOLD * 2) { 
+            const currentLeftEdge = x;
+            const currentRightEdge = x + currentWorldWidth;
+
+            // Dragging current to the RIGHT of otherPin
+            if (Math.abs(currentLeftEdge - (otherRightEdge + FIXED_GAP)) < THRESHOLD) {
+                snappedX = otherRightEdge + FIXED_GAP;
+                snappedY = otherPin.y; // Perfect horizontal align
+                horizontalGuides.push(otherPin.y);
+                gapGuides.push({
+                   x: otherRightEdge,
+                   y: otherPin.y,
+                   width: FIXED_GAP
+                });
+            }
+
+            // Dragging current to the LEFT of otherPin
+            if (Math.abs(currentRightEdge - (otherLeftEdge - FIXED_GAP)) < THRESHOLD) {
+                snappedX = otherLeftEdge - FIXED_GAP - currentWorldWidth;
+                snappedY = otherPin.y;
+                horizontalGuides.push(otherPin.y);
+                gapGuides.push({
+                   x: otherLeftEdge - FIXED_GAP,
+                   y: otherPin.y,
+                   width: FIXED_GAP
+                });
+            }
+        }
+
         // Horizontal Alignment (y matches)
         if (Math.abs(otherPin.y - y) < THRESHOLD) {
             horizontalGuides.push(otherPin.y);
@@ -205,14 +260,26 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
         }
     });
 
-    setGuides({ vertical: verticalGuides, horizontal: horizontalGuides });
+    setGuides((prev) => {
+        const next = { vertical: verticalGuides, horizontal: horizontalGuides, gaps: gapGuides };
+        // Deep stringify equality check since it's just arrays of numbers/small objects
+        if (JSON.stringify(prev) === JSON.stringify(next)) {
+            return prev;
+        }
+        return next;
+    });
     
     // Return snapped position
     return { x: snappedX, y: snappedY };
   };
 
   const handlePinDragEnd = () => {
-      setGuides({ vertical: [], horizontal: [] });
+      setGuides((prev) => {
+          if (prev.vertical.length === 0 && prev.horizontal.length === 0 && prev.gaps.length === 0) {
+              return prev;
+          }
+          return { vertical: [], horizontal: [], gaps: [] };
+      });
   };
 
   // Grid generation
@@ -291,11 +358,24 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
               onSelect={(id) => onSelectPin(id)}
               onUpdate={onUpdatePin}
               onDoubleClick={onDoubleClickPin}
-              onDragMove={(id, x, y) => handlePinDragMove(id, x, y)}
+              onDragMove={(id, x, y, isCtrlPressed) => handlePinDragMove(id, x, y, isCtrlPressed)}
               onDragEnd={handlePinDragEnd}
             />
           ))}
           {/* Alignment Guides */}
+          {guides.gaps.map((g, i) => (
+             <Rect
+                key={`gap-r-${i}`}
+                x={g.x}
+                y={g.y}
+                width={g.width}
+                height={(pins.find(p => p.id === selectedPinId)?.labelHeight || 26) / scale}
+                fill="rgba(59, 130, 246, 0.4)" // Blue gap box
+                stroke="#2563eb"
+                strokeWidth={1 / scale}
+                listening={false}
+             />
+          ))}
           {guides.vertical.map((gx, i) => (
              <Line
                 key={`gv-${i}`}

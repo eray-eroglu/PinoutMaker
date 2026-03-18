@@ -20,6 +20,21 @@ function createWindow() {
   } else {
     win.loadFile(path.join(__dirname, '../dist/index.html'));
   }
+
+  win.on('close', (e) => {
+    const choice = dialog.showMessageBoxSync(win, {
+      type: 'question',
+      buttons: ['Yes', 'No'],
+      title: 'Exit Application',
+      message: 'Are you sure you want to exit the application ? \nUnsaved changes may be lost.',
+      defaultId: 1,
+      cancelId: 1
+    });
+
+    if (choice === 1) {
+      e.preventDefault();
+    }
+  });
 }
 
 app.whenReady().then(() => {
@@ -27,9 +42,19 @@ app.whenReady().then(() => {
     const { canceled, filePath } = await dialog.showSaveDialog({
       filters: [{ name: 'Pinout Project', extensions: ['json'] }],
     });
-    if (canceled || !filePath) return false;
+    if (canceled || !filePath) return { success: false, path: null };
     fs.writeFileSync(filePath, content, 'utf-8');
-    return true;
+    return { success: true, path: filePath };
+  });
+
+  ipcMain.handle('dialog:saveFileDirect', async (_, filePath: string, content: string) => {
+    try {
+      fs.writeFileSync(filePath, content, 'utf-8');
+      return { success: true };
+    } catch (e) {
+      console.error('Failed to quick save:', e);
+      return { success: false };
+    }
   });
 
   ipcMain.handle('dialog:loadFile', async () => {
@@ -37,9 +62,9 @@ app.whenReady().then(() => {
       properties: ['openFile'],
       filters: [{ name: 'Pinout Project', extensions: ['json'] }],
     });
-    if (canceled || filePaths.length === 0) return null;
+    if (canceled || filePaths.length === 0) return { content: null, path: null };
     const content = fs.readFileSync(filePaths[0], 'utf-8');
-    return content;
+    return { content, path: filePaths[0] };
   });
 
   ipcMain.handle('dialog:savePdf', async (_, buffer: ArrayBuffer) => {

@@ -12,8 +12,8 @@ interface PinComponentProps {
     id: string,
     e: Konva.KonvaEventObject<MouseEvent | TouchEvent>
   ) => void;
-  onUpdate: (pin: PinData) => void;
-  onDragMove?: (id: string, x: number, y: number) => { x: number, y: number } | void;
+  onUpdate: (pin: PinData, saveHistory?: boolean) => void;
+  onDragMove?: (id: string, x: number, y: number, isCtrlPressed: boolean) => { x: number, y: number } | void;
   onDragEnd?: () => void;
   onDoubleClick: (id: string, currentText: string) => void;
 }
@@ -59,7 +59,7 @@ export const PinComponent: React.FC<PinComponentProps> = ({
     }
 
     if (needsUpdate) {
-      onUpdate({ ...pin, ...updates });
+      onUpdate({ ...pin, ...updates }, false);
     }
   }, [pin.text]); // Run on mount and when text changes
 
@@ -116,7 +116,7 @@ export const PinComponent: React.FC<PinComponentProps> = ({
   }, [currentLabelX, currentLabelY, pin.targetX, pin.targetY, pin.text, scale, pin.isPwm, updateLine]);
 
 
-  const handleDragMove = () => {
+  const handleDragMove = (e: Konva.KonvaEventObject<DragEvent>) => {
     // Notify parent about new position during drag
     let snappedPos = { x: 0, y: 0};
     if (labelRef.current) {
@@ -124,8 +124,9 @@ export const PinComponent: React.FC<PinComponentProps> = ({
         snappedPos.y = labelRef.current.y();
         
         if (onDragMove) {
-            const result = onDragMove(pin.id, snappedPos.x, snappedPos.y);
-            if (result) {
+            const isCtrlPressed = e.evt.ctrlKey || e.evt.metaKey;
+            const result = onDragMove(pin.id, snappedPos.x, snappedPos.y, isCtrlPressed);
+            if (result && (result.x !== snappedPos.x || result.y !== snappedPos.y)) {
                 // If snap occurred, update position immediately
                 labelRef.current.position({ x: result.x, y: result.y });
                 snappedPos = result;
@@ -158,7 +159,7 @@ export const PinComponent: React.FC<PinComponentProps> = ({
       labelDy: newDy,
       labelWidth: width,
       labelHeight: height
-    });
+    }, true);
   };
 
   const handleAnchorDragEnd = (e: Konva.KonvaEventObject<DragEvent>) => {
@@ -175,7 +176,7 @@ export const PinComponent: React.FC<PinComponentProps> = ({
       targetY: newTargetY,
       x: newLabelX,
       y: newLabelY
-    });
+    }, true);
   };
 
   const handleSelect = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
