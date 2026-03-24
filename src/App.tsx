@@ -2,19 +2,41 @@ import { useState, useRef, useEffect } from 'react';
 import { TopBar } from './components/TopBar';
 import { Sidebar } from './components/Sidebar';
 import { CanvasStage } from './components/CanvasStage';
-import type { PinData, ProjectData } from './types';
+import type { PinData, ProjectData, LegendItem, BoardImage } from './types';
+
+export interface LoadedImage extends BoardImage {
+  element: HTMLImageElement;
+}
 import jsPDF from 'jspdf';
 import Konva from 'konva';
 
 function App() {
-  const [image, setImage] = useState<HTMLImageElement | null>(null);
+  const [images, setImages] = useState<LoadedImage[]>([]);
+  const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
   const [pins, setPins] = useState<PinData[]>([]);
   const [selectedPinId, setSelectedPinId] = useState<string | null>(null);
-  const [imageRotation, setImageRotation] = useState(0);
   const [isAddingPin, setIsAddingPin] = useState(false);
   const [currentFilePath, setCurrentFilePath] = useState<string | null>(null);
   const [gapSize, setGapSize] = useState<number>(12);
   
+  const DEFAULT_LEGEND_ITEMS: LegendItem[] = [
+    { id: '1', text: 'POWER', color: '#dc2626' },
+    { id: '2', text: 'GROUND', color: '#000000' },
+    { id: '3', text: 'PHYSICAL PIN', color: '#0d9488' },
+    { id: '4', text: 'CONTROL', color: '#ca8a04' },
+    { id: '5', text: 'ANALOG', color: '#16a34a' },
+    { id: '6', text: 'TIMER & CHANNEL', color: '#e11d48' },
+    { id: '7', text: 'USART', color: '#1d4ed8' },
+    { id: '8', text: 'SPI', color: '#9333ea' },
+    { id: '9', text: 'I2C', color: '#0ea5e9' },
+    { id: '10', text: 'CAN BUS', color: '#db2777' },
+    { id: '11', text: 'USB', color: '#65a30d' },
+    { id: '12', text: 'MISC', color: '#4b5563' },
+    { id: '13', text: 'BOARD HARDWARE', color: '#ea580c' },
+  ];
+  const [legendItems, setLegendItems] = useState<LegendItem[]>(DEFAULT_LEGEND_ITEMS);
+  const [isLegendVisible, setIsLegendVisible] = useState<boolean>(true);
+
   // Lifted state for CanvasStage
   const [scale, setScale] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
@@ -23,30 +45,40 @@ function App() {
   const copiedPinRef = useRef<PinData | null>(null); // For Ctrl+C/V
 
   // Undo / Redo History
-  const pastRef = useRef<PinData[][]>([]);
-  const futureRef = useRef<PinData[][]>([]);
+  type HistoryState = { pins: PinData[]; images: LoadedImage[] };
+  const pastRef = useRef<HistoryState[]>([]);
+  const futureRef = useRef<HistoryState[]>([]);
 
-  const handlePushHistory = () => {
-    pastRef.current.push([...pins]);
+  const pushHistory = () => {
+    pastRef.current.push({
+      pins: pins.map(p => ({...p})),
+      images: images.map(i => ({...i}))
+    });
     futureRef.current = [];
   };
 
+  const handlePushHistory = () => pushHistory();
+
   const handleUndo = () => {
     if (pastRef.current.length === 0) return;
-    setPins((currentPins) => {
-      const prev = pastRef.current.pop()!;
-      futureRef.current.push([...currentPins]);
-      return prev;
+    const prev = pastRef.current.pop()!;
+    futureRef.current.push({
+      pins: pins.map(p => ({...p})),
+      images: images.map(i => ({...i}))
     });
+    setPins(prev.pins);
+    setImages(prev.images);
   };
 
   const handleRedo = () => {
     if (futureRef.current.length === 0) return;
-    setPins((currentPins) => {
-      const next = futureRef.current.pop()!;
-      pastRef.current.push([...currentPins]);
-      return next;
+    const next = futureRef.current.pop()!;
+    pastRef.current.push({
+      pins: pins.map(p => ({...p})),
+      images: images.map(i => ({...i}))
     });
+    setPins(next.pins);
+    setImages(next.images);
   };
 
   const handleImageUpload = (file: File) => {
@@ -56,15 +88,36 @@ function App() {
       const img = new Image();
       img.src = result;
       img.onload = () => {
-        setImage(img);
-        setImageRotation(0);
+        pushHistory();
+        const newImg: LoadedImage = {
+          id: crypto.randomUUID(),
+          src: result,
+          element: img,
+          x: 0,
+          y: 0,
+          width: img.width,
+          height: img.height,
+          rotation: 0
+        };
+        setImages(prev => [...prev, newImg]);
+        setSelectedImageId(newImg.id);
       };
     };
     reader.readAsDataURL(file);
   };
 
   const handleRotateImage = () => {
-    setImageRotation((prev) => (prev + 90) % 360);
+    pushHistory();
+    setImages(prev => prev.map((img, idx) => {
+      if (selectedImageId && img.id !== selectedImageId) return img;
+      if (!selectedImageId && idx !== 0) return img; // Rotate first image if nothing selected
+      return { ...img, rotation: (img.rotation + 90) % 360 };
+    }));
+  };
+
+  const updateImage = (updatedImage: LoadedImage, saveHistory = true) => {
+    if (saveHistory) pushHistory();
+    setImages(prev => prev.map(img => img.id === updatedImage.id ? updatedImage : img));
   };
 
   const toggleAddPinMode = () => {
@@ -91,33 +144,26 @@ function App() {
       color: '#ef4444', // red-500
       isPwm: false,
     };
-    setPins((prev) => {
-      pastRef.current.push([...prev]);
-      futureRef.current = [];
-      return [...prev, newPin];
-    });
+    pushHistory();
+    setPins((prev) => [...prev, newPin]);
     setSelectedPinId(newPin.id);
     setIsAddingPin(false);
   };
 
   const updatePin = (updatedPin: PinData, saveHistory = true) => {
-    setPins((prevPins) => {
-      if (saveHistory) {
-        pastRef.current.push([...prevPins]);
-        futureRef.current = [];
-      }
-      return prevPins.map((pin) => (pin.id === updatedPin.id ? updatedPin : pin));
-    });
+    if (saveHistory) pushHistory();
+    setPins((prevPins) => prevPins.map((pin) => (pin.id === updatedPin.id ? updatedPin : pin)));
   };
 
   const deletePin = () => {
     if (selectedPinId) {
-      setPins((prevPins) => {
-        pastRef.current.push([...prevPins]);
-        futureRef.current = [];
-        return prevPins.filter((pin) => pin.id !== selectedPinId);
-      });
+      pushHistory();
+      setPins((prevPins) => prevPins.filter((pin) => pin.id !== selectedPinId));
       setSelectedPinId(null);
+    } else if (selectedImageId) {
+      pushHistory();
+      setImages((prev) => prev.filter((img) => img.id !== selectedImageId));
+      setSelectedImageId(null);
     }
   };
 
@@ -166,12 +212,13 @@ function App() {
             return;
           }
           
-          setPins((prevPins) => {
-            pastRef.current.push([...prevPins]);
-            futureRef.current = [];
-            return prevPins.filter((p) => p.id !== selectedPinId);
-          });
+          pushHistory();
+          setPins((prevPins) => prevPins.filter((p) => p.id !== selectedPinId));
           setSelectedPinId(null);
+        } else if (selectedImageId) {
+          pushHistory();
+          setImages((prev) => prev.filter((img) => img.id !== selectedImageId));
+          setSelectedImageId(null);
         }
       }
 
@@ -203,11 +250,8 @@ function App() {
             text: original.text, // Keep same name for bulk creation
           };
 
-          setPins((prevPins) => {
-            pastRef.current.push([...prevPins]);
-            futureRef.current = [];
-            return [...prevPins, newPin];
-          });
+          pushHistory();
+          setPins((prevPins) => [...prevPins, newPin]);
           setSelectedPinId(newId);
           
           // Update clipboard to the new pin so the next paste chains from this one
@@ -243,23 +287,29 @@ function App() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedPinId, pins, image, imageRotation, scale, position, currentFilePath]);
+  }, [selectedPinId, selectedImageId, pins, images, scale, position, currentFilePath]);
 
   const handleQuickSave = async () => {
     if (!window.electronAPI) return;
     
-    let imageData = '';
-    if (image) {
-      imageData = image.src; 
-    }
+    const boardImages = images.map(img => ({
+      id: img.id,
+      src: img.src,
+      x: img.x,
+      y: img.y,
+      width: img.width,
+      height: img.height,
+      rotation: img.rotation
+    }));
 
     const projectData: ProjectData = {
-      image: imageData,
+      images: boardImages,
       pins,
-      rotation: imageRotation,
       scale,
       position,
-      gapSize
+      gapSize,
+      legendItems,
+      isLegendVisible
     };
 
     const json = JSON.stringify(projectData, null, 2);
@@ -284,19 +334,24 @@ function App() {
   const handleSaveProject = async () => {
     if (!window.electronAPI) return;
     
-    // Convert current image to base64 if it exists
-    let imageData = '';
-    if (image) {
-      imageData = image.src; 
-    }
+    const boardImages = images.map(img => ({
+      id: img.id,
+      src: img.src,
+      x: img.x,
+      y: img.y,
+      width: img.width,
+      height: img.height,
+      rotation: img.rotation
+    }));
 
     const projectData: ProjectData = {
-      image: imageData,
+      images: boardImages,
       pins,
-      rotation: imageRotation,
       scale,
       position,
-      gapSize
+      gapSize,
+      legendItems,
+      isLegendVisible
     };
 
     const json = JSON.stringify(projectData, null, 2);
@@ -320,20 +375,43 @@ function App() {
       const data: ProjectData = JSON.parse(result.content);
       
       if (data.image) {
+        // Legacy single image support
         const img = new Image();
         img.src = data.image;
-        img.onload = () => setImage(img);
+        img.onload = () => {
+          setImages([{
+            id: crypto.randomUUID(),
+            src: data.image as string,
+            element: img,
+            x: 0,
+            y: 0,
+            width: img.width,
+            height: img.height,
+            rotation: data.rotation || 0
+          }]);
+        };
+      } else if (data.images && data.images.length > 0) {
+        Promise.all(data.images.map(bImg => new Promise<LoadedImage>((resolve) => {
+          const img = new Image();
+          img.src = bImg.src;
+          img.onload = () => resolve({ ...bImg, element: img });
+        }))).then(loadedImgs => {
+          setImages(loadedImgs);
+        });
       } else {
-        setImage(null);
+        setImages([]);
       }
 
-      // const migratedPins = (data.pins || []).map(pin => ({ ... }));
-
       setPins(data.pins || []);
-      setImageRotation(data.rotation || 0);
       setScale(data.scale || 1);
       setPosition(data.position || { x: 0, y: 0 });
       setGapSize(data.gapSize ?? 12);
+      if (data.legendItems && data.legendItems.length > 0) {
+        setLegendItems(data.legendItems);
+      } else {
+        setLegendItems(DEFAULT_LEGEND_ITEMS);
+      }
+      setIsLegendVisible(data.isLegendVisible ?? true);
       
     } catch (e) {
       console.error("Failed to parse project file", e);
@@ -362,21 +440,24 @@ function App() {
     let hasContent = false;
 
     // Consider Image Bounds
-    if (image) {
+    if (images.length > 0) {
         hasContent = true;
-        // Image is drawn at (0,0) but offset by (w/2, h/2). 
-        // effectively centering it at 0,0 in world space.
-        // Rotation happens around that center.
-        // The max extent of a rotated rectangle centered at 0,0 is its radius.
-        const w = image.width;
-        const h = image.height;
-        const radius = Math.sqrt(w*w + h*h) / 2;
-        
-        // Safe bounding box for any rotation
-        minX = -radius;
-        maxX = radius;
-        minY = -radius;
-        maxY = radius;
+        images.forEach(img => {
+            // Images are drawn with offsetX = width/2, offsetY = height/2 relative to x,y
+            // So we calculate the real bounding box of each rotated image
+            const w = img.width;
+            const h = img.height;
+            const radius = Math.sqrt(w*w + h*h) / 2;
+            
+            // To be strictly correct but simple, we can use the radius to form a safe bounding box.
+            const centerX = img.x;
+            const centerY = img.y;
+            
+            if (centerX - radius < minX) minX = centerX - radius;
+            if (centerX + radius > maxX) maxX = centerX + radius;
+            if (centerY - radius < minY) minY = centerY - radius;
+            if (centerY + radius > maxY) maxY = centerY + radius;
+        });
     }
     
     // Consider Pins
@@ -485,76 +566,62 @@ function App() {
             bgRect.moveToBottom();
         }
 
-        // Temporarily render the Legend Panel into the Konva Stage for export
-        // Since the legend is HTML, Konva doesn't see it. We must draw it manually.
-        const legendGroup = new Konva.Group({
-            x: legendWorldX,
-            y: legendWorldY,
-            scaleX: legendScale,
-            scaleY: legendScale,
-            id: 'temp-legend-export'
-        });
+        if (isLegendVisible) {
+            // Temporarily render the Legend Panel into the Konva Stage for export
+            // Since the legend is HTML, Konva doesn't see it. We must draw it manually.
+            const legendGroup = new Konva.Group({
+                x: legendWorldX,
+                y: legendWorldY,
+                scaleX: legendScale,
+                scaleY: legendScale,
+                id: 'temp-legend-export'
+            });
 
-        // Legend Background
-        legendGroup.add(new Konva.Rect({
-            x: 0, y: 0, width: 192, height: 340,
-            fill: '#e6e6e6', stroke: '#d1d5db', strokeWidth: 1,
-            cornerRadius: 4, shadowColor: 'black', shadowBlur: 4, shadowOpacity: 0.1
-        }));
-
-        // Legend Title
-        legendGroup.add(new Konva.Text({
-            x: 8, y: 8, text: 'TABLE', fontSize: 12, fontFamily: 'sans-serif', fill: '#4b5563'
-        }));
-
-        const legendItems = [
-            { text: 'POWER', color: '#dc2626' },
-            { text: 'GROUND', color: '#000000' },
-            { text: 'PHYSICAL PIN', color: '#0d9488' },
-            { text: 'CONTROL', color: '#ca8a04' },
-            { text: 'ANALOG', color: '#16a34a' },
-            { text: 'TIMER & CHANNEL', color: '#e11d48' },
-            { text: 'USART', color: '#1d4ed8' },
-            { text: 'SPI', color: '#9333ea' },
-            { text: 'I2C', color: '#0ea5e9' },
-            { text: 'CAN BUS', color: '#db2777' },
-            { text: 'USB', color: '#65a30d' },
-            { text: 'MISC', color: '#4b5563' },
-            { text: 'BOARD HARDWARE', color: '#ea580c' }
-        ];
-
-        let currentY = 24;
-        legendItems.forEach(item => {
+            // Legend Background
             legendGroup.add(new Konva.Rect({
-                x: 8, y: currentY, width: 176, height: 18,
-                fill: item.color, stroke: 'rgba(0,0,0,0.5)', strokeWidth: 1
+                x: 0, y: 0, width: 192, height: 40 + (legendItems.length * 20) + 40,
+                fill: '#e6e6e6', stroke: '#d1d5db', strokeWidth: 1,
+                cornerRadius: 4, shadowColor: 'black', shadowBlur: 4, shadowOpacity: 0.1
             }));
+
+            // Legend Title
             legendGroup.add(new Konva.Text({
-                x: 8, y: currentY + 4, width: 176, text: item.text,
-                fontSize: 10, fontFamily: 'sans-serif', fill: 'white', align: 'center'
+                x: 8, y: 8, text: 'TABLE', fontSize: 12, fontFamily: 'sans-serif', fill: '#4b5563'
             }));
-            currentY += 20;
-        });
 
-        // Legend Footer (Lines)
-        currentY += 8;
-        legendGroup.add(new Konva.Line({ points: [8, currentY, 184, currentY], stroke: '#d1d5db', strokeWidth: 1 }));
-        currentY += 8;
-        
-        legendGroup.add(new Konva.Line({ points: [8, currentY+5, 28, currentY+5], stroke: 'black', strokeWidth: 1 }));
-        legendGroup.add(new Konva.Text({ x: 36, y: currentY, text: 'Standard Pin', fontSize: 10, fill: '#4b5563' }));
-        
-        currentY += 16;
-        // Approximate wave for PWM
-        legendGroup.add(new Konva.Line({ 
-            points: [8, currentY+5, 13, currentY, 18, currentY+5, 28, currentY+5], 
-            stroke: 'black', strokeWidth: 1, tension: 0.4 
-        }));
-        legendGroup.add(new Konva.Text({ x: 36, y: currentY, text: 'PWM Pin', fontSize: 10, fill: '#4b5563' }));
+            let currentY = 24;
+            legendItems.forEach(item => {
+                legendGroup.add(new Konva.Rect({
+                    x: 8, y: currentY, width: 176, height: 18,
+                    fill: item.color, stroke: 'rgba(0,0,0,0.5)', strokeWidth: 1
+                }));
+                legendGroup.add(new Konva.Text({
+                    x: 8, y: currentY + 4, width: 176, text: item.text,
+                    fontSize: 10, fontFamily: 'sans-serif', fill: 'white', align: 'center'
+                }));
+                currentY += 20;
+            });
 
-        if (contentLayer) {
-            contentLayer.add(legendGroup);
-            contentLayer.draw();
+            // Legend Footer (Lines)
+            currentY += 8;
+            legendGroup.add(new Konva.Line({ points: [8, currentY, 184, currentY], stroke: '#d1d5db', strokeWidth: 1 }));
+            currentY += 8;
+            
+            legendGroup.add(new Konva.Line({ points: [8, currentY+5, 28, currentY+5], stroke: 'black', strokeWidth: 1 }));
+            legendGroup.add(new Konva.Text({ x: 36, y: currentY, text: 'Standard Pin', fontSize: 10, fill: '#4b5563' }));
+            
+            currentY += 16;
+            // Approximate wave for PWM
+            legendGroup.add(new Konva.Line({ 
+                points: [8, currentY+5, 13, currentY, 18, currentY+5, 28, currentY+5], 
+                stroke: 'black', strokeWidth: 1, tension: 0.4 
+            }));
+            legendGroup.add(new Konva.Text({ x: 36, y: currentY, text: 'PWM Pin', fontSize: 10, fill: '#4b5563' }));
+
+            if (contentLayer) {
+                contentLayer.add(legendGroup);
+                contentLayer.draw();
+            }
         }
 
         // Wait a tiny bit for Konva to render the new group
@@ -629,15 +696,17 @@ function App() {
         onSave={handleSaveProject}
         onLoad={handleLoadProject}
         onExportPdf={handleExportPdf}
-        isPinSelected={!!selectedPinId}
-        isImageLoaded={!!image}
+        isPinSelected={!!selectedPinId || !!selectedImageId}
+        isImageLoaded={images.length > 0}
         isAddingPin={isAddingPin}
       />
       <div className='flex flex-1 overflow-hidden'>
         <CanvasStage
           ref={stageRef}
-          image={image}
-          imageRotation={imageRotation}
+          images={images}
+          onUpdateImage={updateImage}
+          selectedImageId={selectedImageId}
+          onSelectImage={setSelectedImageId}
           pins={pins}
           selectedPinId={selectedPinId}
           onSelectPin={selectPin}
@@ -650,6 +719,8 @@ function App() {
           position={position}
           setPosition={setPosition}
           gapSize={gapSize}
+          legendItems={legendItems}
+          isLegendVisible={isLegendVisible}
         />
         <Sidebar 
           selectedPin={selectedPin} 
@@ -658,6 +729,10 @@ function App() {
           scale={scale}
           gapSize={gapSize}
           onGapSizeChange={setGapSize}
+          legendItems={legendItems}
+          onLegendItemsChange={setLegendItems}
+          isLegendVisible={isLegendVisible}
+          onLegendVisibilityChange={setIsLegendVisible}
         />
       </div>
     </div>

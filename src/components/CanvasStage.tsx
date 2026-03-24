@@ -1,12 +1,15 @@
 import { useEffect, forwardRef, useState  } from 'react';
 import { Stage, Layer, Line, Rect, Image as KonvaImage  } from 'react-konva';
 import Konva from 'konva';
-import type { PinData } from '../types';
+import type { PinData, LegendItem } from '../types';
+import type { LoadedImage } from '../App';
 import { PinComponent } from './PinComponent';
 
 interface CanvasStageProps {
-  image: HTMLImageElement | null;
-  imageRotation: number;
+  images: LoadedImage[];
+  onUpdateImage: (img: LoadedImage, saveHistory?: boolean) => void;
+  selectedImageId: string | null;
+  onSelectImage: (id: string | null) => void;
   pins: PinData[];
   selectedPinId: string | null;
   onSelectPin: (id: string | null) => void;
@@ -19,11 +22,15 @@ interface CanvasStageProps {
   position: { x: number; y: number };
   setPosition: (pos: { x: number; y: number }) => void;
   gapSize: number;
+  legendItems: LegendItem[];
+  isLegendVisible: boolean;
 }
 
 export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
-  image,
-  imageRotation,
+  images,
+  onUpdateImage,
+  selectedImageId,
+  onSelectImage,
   pins,
   selectedPinId,
   onSelectPin,
@@ -36,6 +43,8 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
   position,
   setPosition,
   gapSize,
+  legendItems,
+  isLegendVisible
 }, ref) => {
 
   const [dimensions, setDimensions] = useState({
@@ -57,31 +66,20 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
 
   const { width, height } = dimensions;
 
-  // Center image when it loads or rotates
+  // Center first image when it loads
   useEffect(() => {
-    if (image) {
-      // If rotated 90 or 270 degrees, swap width and height for centering calculation
-      const isVertical = imageRotation % 180 !== 0;
-      const displayWidth = isVertical ? image.height : image.width;
-      const displayHeight = isVertical ? image.width : image.height;
-
-      // Center the image in the view
-      // We position the Stage such that (0,0) (which will be the center of our image) is at the center of the viewport
+    if (images.length === 1 && scale === 1 && position.x === 0 && position.y === 0) {
+      const img = images[0];
+      const isVertical = img.rotation % 180 !== 0;
+      const displayWidth = isVertical ? img.height : img.width;
+      const displayHeight = isVertical ? img.width : img.height;
       const x = (width - displayWidth) / 2;
       const y = (height - displayHeight) / 2;
-
-      // When rotating, we must offset the image position so it rotates around its center
-      // But we will handle that in the <KonvaImage> props directly by setting x/y to center and offsetting
       
-      // Reset visual transform to focus on the image only on load (rotation shouldn't reset scale maybe?)
-      // For now, let's reset to keep it simple as requested "resim ... dik yapıcaz"
-      setScale(1);
-      setPosition({ x: x + displayWidth / 2, y: y + displayHeight / 2 }); // Shift stage to look at the center
-      // Actually, if we set image x=0, y=0 to be TopLeft, rotation is hard.
-      // Let's set Image x=0, y=0 to be CENTER of image.
+      setPosition({ x: x + displayWidth / 2, y: y + displayHeight / 2 }); 
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [image, imageRotation]);
+  }, [images.length]);
 
   const handleWheel = (e: Konva.KonvaEventObject<WheelEvent>) => {
     e.evt.preventDefault();
@@ -126,9 +124,9 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
       
       onCreatePin(pos.x, pos.y);
     } else {
-      // Deselect if clicking on empty space (Stage, Grid, Image)
-      // Note: PinComponent stops propagation, so this won't fire when clicking a Pin.
+      // Deselect if clicking on empty space (Stage, Grid)
       onSelectPin(null);
+      onSelectImage(null);
     }
   };
 
@@ -338,17 +336,35 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
           {lines}
         </Layer>
         <Layer name="content-layer">
-          {image && (
+          {images.map(img => (
             <KonvaImage
-              image={image}
-              rotation={imageRotation}
+              key={img.id}
+              image={img.element}
+              rotation={img.rotation}
+              draggable={!isAddingPin}
+              onClick={(e) => {
+                e.cancelBubble = true;
+                onSelectImage(img.id);
+                onSelectPin(null);
+              }}
+              onTap={(e) => {
+                e.cancelBubble = true;
+                onSelectImage(img.id);
+                onSelectPin(null);
+              }}
+              onDragEnd={(e) => {
+                const node = e.target;
+                onUpdateImage({ ...img, x: node.x(), y: node.y() });
+              }}
+              stroke={selectedImageId === img.id ? '#3b82f6' : undefined}
+              strokeWidth={selectedImageId === img.id ? 2 / scale : 0}
               // Set the origin to the center of the image
-              offsetX={image.width / 2}
-              offsetY={image.height / 2}
-              x={0} 
-              y={0}
+              offsetX={img.width / 2}
+              offsetY={img.height / 2}
+              x={img.x} 
+              y={img.y}
             />
-          )}
+          ))}
           {pins.map((pin) => (
             <PinComponent
               key={pin.id}
@@ -403,39 +419,37 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
       </div>
 
       {/* Legend Panel */}
-      <div className="absolute top-4 left-4 bg-[#e6e6e6] border border-gray-300 rounded shadow-md p-2 w-48 pointer-events-none opacity-90">
-        <h3 className="text-xs font-normal text-gray-600 mb-2 uppercase tracking-wider">TABLE</h3>
-        <div className="flex flex-col gap-[2px]">
-          <div className="flex items-center justify-center bg-[#dc2626] text-white text-[10px] font-normal py-1 border border-black/50">POWER</div>
-          <div className="flex items-center justify-center bg-[#000000] text-white text-[10px] font-normal py-1 border border-black/50">GROUND</div>
-          <div className="flex items-center justify-center bg-[#0d9488] text-white text-[10px] font-normal py-1 border border-black/50">PHYSICAL PIN</div>
-          <div className="flex items-center justify-center bg-[#ca8a04] text-white text-[10px] font-normal py-1 border border-black/50">CONTROL</div>
-          <div className="flex items-center justify-center bg-[#16a34a] text-white text-[10px] font-normal py-1 border border-black/50">ANALOG</div>
-          <div className="flex items-center justify-center bg-[#e11d48] text-white text-[10px] font-normal py-1 border border-black/50">TIMER & CHANNEL</div>
-          <div className="flex items-center justify-center bg-[#1d4ed8] text-white text-[10px] font-normal py-1 border border-black/50">USART</div>
-          <div className="flex items-center justify-center bg-[#9333ea] text-white text-[10px] font-normal py-1 border border-black/50">SPI</div>
-          <div className="flex items-center justify-center bg-[#0ea5e9] text-white text-[10px] font-normal py-1 border border-black/50">I2C</div>
-          <div className="flex items-center justify-center bg-[#db2777] text-white text-[10px] font-normal py-1 border border-black/50">CAN BUS</div>
-          <div className="flex items-center justify-center bg-[#65a30d] text-white text-[10px] font-normal py-1 border border-black/50">USB</div>
-          <div className="flex items-center justify-center bg-[#4b5563] text-white text-[10px] font-normal py-1 border border-black/50">MISC</div>
-          <div className="flex items-center justify-center bg-[#ea580c] text-white text-[10px] font-normal py-1 border border-black/50">BOARD HARDWARE</div>
-        </div>
-        
-        <div className="mt-2 pt-2 border-t border-gray-300 flex flex-col gap-1 text-[10px] text-gray-600">
-          <div className="flex items-center gap-2">
-            <svg width="20" height="10" className="overflow-visible">
-              <path d="M 0 5 L 20 5" stroke="black" strokeWidth="1" />
-            </svg>
-            <span>Standard Pin</span>
+      {isLegendVisible && (
+        <div className="absolute top-4 left-4 bg-[#e6e6e6] border border-gray-300 rounded shadow-md p-2 w-48 pointer-events-none opacity-90">
+          <h3 className="text-xs font-normal text-gray-600 mb-2 uppercase tracking-wider">TABLE</h3>
+          <div className="flex flex-col gap-[2px]">
+            {legendItems.map((item) => (
+              <div 
+                key={item.id} 
+                className="flex items-center justify-center text-white text-[10px] font-normal py-1 border border-black/50"
+                style={{ backgroundColor: item.color }}
+              >
+                {item.text}
+              </div>
+            ))}
           </div>
-          <div className="flex items-center gap-2">
-            <svg width="20" height="10" className="overflow-visible">
-              <path d="M 0 5 Q 5 0, 10 5 T 20 5" stroke="black" strokeWidth="1" fill="none" />
-            </svg>
-            <span>PWM Pin</span>
+          
+          <div className="mt-2 pt-2 border-t border-gray-300 flex flex-col gap-1 text-[10px] text-gray-600">
+            <div className="flex items-center gap-2">
+              <svg width="20" height="10" className="overflow-visible">
+                <path d="M 0 5 L 20 5" stroke="black" strokeWidth="1" />
+              </svg>
+              <span>Standard Pin</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <svg width="20" height="10" className="overflow-visible">
+                <path d="M 0 5 Q 5 0, 10 5 T 20 5" stroke="black" strokeWidth="1" fill="none" />
+              </svg>
+              <span>PWM Pin</span>
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 });

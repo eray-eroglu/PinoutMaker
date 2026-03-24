@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import type { PinData } from '../types';
+import type { PinData, LegendItem } from '../types';
 
 interface SidebarProps {
   selectedPin: PinData | null;
@@ -8,6 +8,10 @@ interface SidebarProps {
   scale: number;
   gapSize: number;
   onGapSizeChange: (size: number) => void;
+  legendItems: LegendItem[];
+  onLegendItemsChange: (items: LegendItem[]) => void;
+  isLegendVisible: boolean;
+  onLegendVisibilityChange: (visible: boolean) => void;
 }
 
 const COLORS = [
@@ -45,8 +49,12 @@ const getSmartColor = (text: string): string | null => {
   return null;
 };
 
-export const Sidebar = ({ selectedPin, onUpdatePin, onPushHistory, scale, gapSize, onGapSizeChange }: SidebarProps) => {
+export const Sidebar = ({ 
+  selectedPin, onUpdatePin, onPushHistory, scale, gapSize, onGapSizeChange,
+  legendItems, onLegendItemsChange, isLegendVisible, onLegendVisibilityChange
+}: SidebarProps) => {
   const [customStep, setCustomStep] = useState<number>(5);
+  const [isTableSettingsExpanded, setIsTableSettingsExpanded] = useState<boolean>(false);
   const nameInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -125,41 +133,8 @@ export const Sidebar = ({ selectedPin, onUpdatePin, onPushHistory, scale, gapSiz
     }
   };
 
-  if (!selectedPin) {
-    return (
-      <div className='w-80 bg-gray-50 border-l border-gray-300 flex flex-col p-4 shrink-0 h-full'>
-        <h2 className='text-lg font-semibold mb-4 text-gray-700'>
-          Project Settings
-        </h2>
-        <div className="mb-6">
-          <label className='block text-sm font-medium text-gray-600 mb-2'>
-            Global Gap Size (px)
-          </label>
-          <div className="flex items-center gap-2">
-            <input 
-              type="number" 
-              min="0" 
-              max="100" 
-              value={gapSize}
-              onChange={(e) => onGapSizeChange(Number(e.target.value) || 12)}
-              className="w-20 border border-gray-300 rounded px-2 py-1 text-sm outline-none focus:border-blue-500"
-            />
-            <span className="text-xs text-gray-500">Distance between snapped pins</span>
-          </div>
-        </div>
-
-        <h2 className='text-lg font-semibold mt-6 mb-4 text-gray-700'>
-          Pin Properties
-        </h2>
-        <div className='text-gray-400 text-sm'>
-          Select a pin to edit properties.
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className='w-80 bg-gray-50 border-l border-gray-300 flex flex-col p-4 shrink-0 h-full'>
+    <div className='w-80 bg-gray-50 border-l border-gray-300 flex flex-col p-4 shrink-0 h-full overflow-y-auto'>
       <h2 className='text-lg font-semibold mb-4 text-gray-700'>
         Project Settings
       </h2>
@@ -180,123 +155,199 @@ export const Sidebar = ({ selectedPin, onUpdatePin, onPushHistory, scale, gapSiz
         </div>
       </div>
 
+      <button 
+        onClick={() => setIsTableSettingsExpanded(!isTableSettingsExpanded)}
+        className='flex items-center justify-between w-full text-left text-lg font-semibold mb-4 text-gray-700 hover:text-gray-900'
+      >
+        <span>Table Settings</span>
+        <span className="text-sm font-normal text-gray-400">
+          {isTableSettingsExpanded ? '▲' : '▼'}
+        </span>
+      </button>
+            
+      {isTableSettingsExpanded && (
+        <div className="mb-6 space-y-4">
+          <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+            <input 
+              type="checkbox" 
+              checked={isLegendVisible} 
+              onChange={(e) => onLegendVisibilityChange(e.target.checked)}
+              className="rounded border-gray-300 text-blue-600"
+            />
+            Show Table on Canvas
+          </label>
+
+          {isLegendVisible && (
+            <div className="space-y-2">
+              <div className="text-xs font-semibold text-gray-500 uppercase">Rows</div>
+              {legendItems.map((item, index) => (
+                <div key={item.id} className="flex items-center gap-2">
+                  <input 
+                    type="color" 
+                    value={item.color} 
+                    onChange={(e) => {
+                      const newItems = [...legendItems];
+                      newItems[index].color = e.target.value;
+                      onLegendItemsChange(newItems);
+                    }}
+                    className="w-6 h-6 p-0 border-0 rounded cursor-pointer shrink-0"
+                  />
+                  <input 
+                    type="text" 
+                    value={item.text} 
+                    onChange={(e) => {
+                      const newItems = [...legendItems];
+                      newItems[index].text = e.target.value;
+                      onLegendItemsChange(newItems);
+                    }}
+                    className="flex-1 min-w-0 border border-gray-300 rounded px-2 py-1 text-xs outline-none focus:border-blue-500"
+                  />
+                  <button 
+                    onClick={() => {
+                      onLegendItemsChange(legendItems.filter((_, i) => i !== index));
+                    }}
+                    className="text-red-500 hover:text-red-700 text-xs px-1"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+              <button 
+                onClick={() => {
+                  onLegendItemsChange([...legendItems, { id: crypto.randomUUID(), text: 'NEW ROW', color: '#888888' }]);
+                }}
+                className="w-full text-center text-xs text-blue-600 hover:text-blue-800 py-1 font-medium"
+              >
+                + Add Row
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       <hr className="my-4 border-gray-300" />
 
       <h2 className='text-lg font-semibold mb-4 text-gray-700'>
         Pin Properties
       </h2>
 
-      <div className='space-y-4'>
-        <div>
-          <label className='block text-sm font-medium text-gray-600 mb-1'>
-            Pin Name
-          </label>
-          <input
-            ref={nameInputRef}
-            type='text'
-            className='w-full border border-gray-300 rounded px-2 py-1.5 text-sm outline-none focus:border-blue-500'
-            value={selectedPin.text}
-            onChange={handleNameChange}
-            onFocus={() => onPushHistory()}
-          />
+      {!selectedPin ? (
+        <div className='text-gray-400 text-sm'>
+          Select a pin to edit properties.
         </div>
-
-        <div>
-          <label className='block text-sm font-medium text-gray-600 mb-2'>
-            Label Color
-          </label>
-          <div className='grid grid-cols-4 gap-2'>
-            {COLORS.map((c) => (
-              <div
-                key={c}
-                className={`w-8 h-8 rounded cursor-pointer transition-transform hover:scale-110`}
-                style={{
-                  backgroundColor: c,
-                  boxShadow:
-                    selectedPin.color === c
-                      ? '0 0 0 2px white, 0 0 0 4px gray'
-                      : 'none',
-                }}
-                onClick={() => handleColorChange(c)}
-              ></div>
-            ))}
-          </div>
-        </div>
-
-        <div className='flex items-center gap-2'>
-          <input
-            type='checkbox'
-            className='rounded border-gray-300 text-blue-600 focus:ring-blue-500'
-            checked={selectedPin.isPwm}
-            onChange={handlePwmChange}
-          />
-          <label className='text-sm text-gray-600'>PWM Capable</label>
-        </div>
-
-        <hr className="my-4 border-gray-300" />
-
-        <div>
-          <label className='block text-sm font-medium text-gray-600 mb-2'>
-            Position Adjustment (px)
-          </label>
-          
-          <div className="flex items-center gap-2 mb-3">
-            <span className="text-xs text-gray-500">Step:</span>
-            <input 
-              type="number" 
-              min="1" 
-              max="100" 
-              value={customStep}
-              onChange={(e) => setCustomStep(Number(e.target.value) || 1)}
-              className="w-16 border border-gray-300 rounded px-2 py-1 text-xs outline-none focus:border-blue-500"
+      ) : (
+        <div className='space-y-4'>
+          <div>
+            <label className='block text-sm font-medium text-gray-600 mb-1'>
+              Pin Name
+            </label>
+            <input
+              ref={nameInputRef}
+              type='text'
+              className='w-full border border-gray-300 rounded px-2 py-1.5 text-sm outline-none focus:border-blue-500'
+              value={selectedPin.text}
+              onChange={handleNameChange}
+              onFocus={() => onPushHistory()}
             />
-            <span className="text-xs text-gray-500">px</span>
           </div>
 
-          <div className="grid grid-cols-3 gap-2 text-center">
-            <div></div>
-            <button 
-              onClick={() => handleMoveUp(customStep)}
-              className="bg-gray-200 hover:bg-gray-300 text-gray-700 py-1 px-2 rounded text-xs font-bold"
-              title={`Move Up ${customStep}px`}
-            >
-              ↑
-            </button>
-            <div></div>
-            
-            <button 
-              onClick={() => handleMoveLeft(customStep)}
-              className="bg-gray-200 hover:bg-gray-300 text-gray-700 py-1 px-2 rounded text-xs font-bold"
-              title={`Move Left ${customStep}px`}
-            >
-              ←
-            </button>
-            <div className="flex items-center justify-center text-xs text-gray-500 font-medium">
-              {customStep}px
+          <div>
+            <label className='block text-sm font-medium text-gray-600 mb-2'>
+              Label Color
+            </label>
+            <div className='grid grid-cols-4 gap-2'>
+              {COLORS.map((c) => (
+                <div
+                  key={c}
+                  className={`w-8 h-8 rounded cursor-pointer transition-transform hover:scale-110`}
+                  style={{
+                    backgroundColor: c,
+                    boxShadow:
+                      selectedPin.color === c
+                        ? '0 0 0 2px white, 0 0 0 4px gray'
+                        : 'none',
+                  }}
+                  onClick={() => handleColorChange(c)}
+                ></div>
+              ))}
             </div>
-            <button 
-              onClick={() => handleMoveRight(customStep)}
-              className="bg-gray-200 hover:bg-gray-300 text-gray-700 py-1 px-2 rounded text-xs font-bold"
-              title={`Move Right ${customStep}px`}
-            >
-              →
-            </button>
-            
-            <div></div>
-            <button 
-              onClick={() => handleMoveDown(customStep)}
-              className="bg-gray-200 hover:bg-gray-300 text-gray-700 py-1 px-2 rounded text-xs font-bold"
-              title={`Move Down ${customStep}px`}
-            >
-              ↓
-            </button>
-            <div></div>
           </div>
-          <p className="text-xs text-gray-400 mt-2">
-            Use these buttons to fine-tune the label's position relative to other pins.
-          </p>
+
+          <div className='flex items-center gap-2'>
+            <input
+              type='checkbox'
+              className='rounded border-gray-300 text-blue-600 focus:ring-blue-500'
+              checked={selectedPin.isPwm}
+              onChange={handlePwmChange}
+            />
+            <label className='text-sm text-gray-600'>PWM Capable</label>
+          </div>
+
+          <hr className="my-4 border-gray-300" />
+
+          <div>
+            <label className='block text-sm font-medium text-gray-600 mb-2'>
+              Position Adjustment (px)
+            </label>
+            
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-xs text-gray-500">Step:</span>
+              <input 
+                type="number" 
+                min="1" 
+                max="100" 
+                value={customStep}
+                onChange={(e) => setCustomStep(Number(e.target.value) || 1)}
+                className="w-16 border border-gray-300 rounded px-2 py-1 text-xs outline-none focus:border-blue-500"
+              />
+              <span className="text-xs text-gray-500">px</span>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div></div>
+              <button 
+                onClick={() => handleMoveUp(customStep)}
+                className="bg-gray-200 hover:bg-gray-300 text-gray-700 py-1 px-2 rounded text-xs font-bold"
+                title={`Move Up ${customStep}px`}
+              >
+                ↑
+              </button>
+              <div></div>
+              
+              <button 
+                onClick={() => handleMoveLeft(customStep)}
+                className="bg-gray-200 hover:bg-gray-300 text-gray-700 py-1 px-2 rounded text-xs font-bold"
+                title={`Move Left ${customStep}px`}
+              >
+                ←
+              </button>
+              <div className="flex items-center justify-center text-xs text-gray-500 font-medium">
+                {customStep}px
+              </div>
+              <button 
+                onClick={() => handleMoveRight(customStep)}
+                className="bg-gray-200 hover:bg-gray-300 text-gray-700 py-1 px-2 rounded text-xs font-bold"
+                title={`Move Right ${customStep}px`}
+              >
+                →
+              </button>
+              
+              <div></div>
+              <button 
+                onClick={() => handleMoveDown(customStep)}
+                className="bg-gray-200 hover:bg-gray-300 text-gray-700 py-1 px-2 rounded text-xs font-bold"
+                title={`Move Down ${customStep}px`}
+              >
+                ↓
+              </button>
+              <div></div>
+            </div>
+            <p className="text-xs text-gray-400 mt-2">
+              Use these buttons to fine-tune the label's position relative to other pins.
+            </p>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };

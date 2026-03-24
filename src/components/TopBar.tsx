@@ -14,10 +14,10 @@ interface TopBarProps {
   isAddingPin: boolean;
 }
 
-export const TopBar = ({ 
-  onImport, 
-  onAddPin, 
-  onDeletePin, 
+export const TopBar = ({
+  onImport,
+  onAddPin,
+  onDeletePin,
   onRotateImage,
   onSave,
   onLoad,
@@ -52,69 +52,89 @@ export const TopBar = ({
         accept='image/*'
         onChange={handleFileChange}
       />
-      <button 
+      <button
         onClick={onSave}
-        className='flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm cursor-pointer transition-colors'
+        className='group relative flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm cursor-pointer transition-colors'
       >
         <Save size={16} /> Save
+        <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 delay-500 bg-gray-800 text-white text-xs rounded px-2 py-1 pointer-events-none z-50 whitespace-nowrap shadow-md">
+          Save your current board layout and pins to a file (Ctrl+S)
+        </div>
       </button>
 
-      <button 
+      <button
         onClick={onLoad}
-        className='flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-300 rounded hover:bg-gray-50 text-gray-700 text-sm cursor-pointer transition-colors'
+        className='group relative flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-300 rounded hover:bg-gray-50 text-gray-700 text-sm cursor-pointer transition-colors'
       >
         <FolderOpen size={16} /> Load
+        <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 delay-500 bg-gray-800 text-white text-xs rounded px-2 py-1 pointer-events-none z-50 whitespace-nowrap shadow-md">
+          Load a previously saved project file (.json)
+        </div>
       </button>
 
-      <button 
+      <button
         onClick={handleImportClick}
-        className='flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-300 rounded hover:bg-gray-50 text-gray-700 text-sm cursor-pointer transition-colors'
+        className='group relative flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-300 rounded hover:bg-gray-50 text-gray-700 text-sm cursor-pointer transition-colors'
       >
         <Upload size={16} /> Import
+        <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 delay-500 bg-gray-800 text-white text-xs rounded px-2 py-1 pointer-events-none z-50 whitespace-nowrap shadow-md">
+          Import a new image to the board. You can add multiple images.
+        </div>
       </button>
 
       <button
         onClick={onRotateImage}
         disabled={!isImageLoaded}
-        className={`flex items-center gap-2 px-3 py-1.5 border rounded text-sm transition-colors ${
-          isImageLoaded
+        className={`group relative flex items-center gap-2 px-3 py-1.5 border rounded text-sm transition-colors ${isImageLoaded
           ? 'bg-white border-gray-300 hover:bg-gray-50 text-gray-700 cursor-pointer'
           : 'bg-gray-50 border-gray-200 text-gray-400 cursor-not-allowed'
-        }`}
+          }`}
       >
         <RotateCw size={16} /> Rotate
+        <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 delay-500 bg-gray-800 text-white text-xs rounded px-2 py-1 pointer-events-none z-50 whitespace-nowrap shadow-md">
+          Rotate the currently selected image 90 degrees clockwise
+        </div>
       </button>
 
       <button
         onClick={onExportPdf}
-        className='flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-300 rounded hover:bg-gray-50 text-gray-700 text-sm cursor-pointer transition-colors'
+        className='group relative flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-300 rounded hover:bg-gray-50 text-gray-700 text-sm cursor-pointer transition-colors'
       >
         <FileDown size={16} /> Export PDF
+        <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 delay-500 bg-gray-800 text-white text-xs rounded px-2 py-1 pointer-events-none z-50 whitespace-nowrap shadow-md">
+          Export your board and pin table as a high-quality PDF
+        </div>
       </button>
 
       <div className='w-px h-6 bg-gray-300 mx-2'></div>
 
       <button
         onClick={onAddPin}
-        className={`flex items-center gap-2 px-3 py-1.5 border rounded text-sm cursor-pointer transition-colors ${
-          isAddingPin
-            ? 'bg-blue-100 border-blue-300 text-blue-700'
-            : 'bg-white border-gray-300 hover:bg-gray-50 text-gray-700'
-        }`}
+        className={`group relative flex items-center gap-2 px-3 py-1.5 border rounded text-sm cursor-pointer transition-colors ${isAddingPin
+          ? 'bg-blue-100 border-blue-300 text-blue-700'
+          : 'bg-white border-gray-300 hover:bg-gray-50 text-gray-700'
+          }`}
       >
         <Plus size={16} /> {isAddingPin ? 'Click on Board' : 'Add Pin'}
+        <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 delay-500 bg-gray-800 text-white text-xs rounded px-2 py-1 pointer-events-none z-50 whitespace-nowrap shadow-md">
+          Add a new customizable pin to the board
+        </div>
       </button>
-      <button
-        onClick={onDeletePin}
-        disabled={!isPinSelected}
-        className={`flex items-center gap-2 px-3 py-1.5 border rounded text-sm transition-colors ml-auto ${
-          isPinSelected
+      <div className={`group relative flex ml-auto`}>
+        <button
+          onClick={onDeletePin}
+          disabled={!isPinSelected}
+          className={`flex items-center gap-2 px-3 py-1.5 border rounded text-sm transition-colors ${isPinSelected
             ? 'bg-red-50 border-red-200 text-red-600 hover:bg-red-100 cursor-pointer'
             : 'bg-gray-50 border-gray-200 text-gray-400 cursor-not-allowed'
-        }`}
-      >
-        <Trash2 size={16} /> Delete Pin
-      </button>
+            }`}
+        >
+          <Trash2 size={16} /> {isPinSelected ? 'Delete' : 'Delete Pin'}
+        </button>
+        <div className="absolute top-full mt-2 right-0 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 delay-500 bg-gray-800 text-white text-xs rounded px-2 py-1 pointer-events-none z-50 whitespace-nowrap shadow-md">
+          Delete the currently selected pin or image (Del)
+        </div>
+      </div>
     </div>
   );
 };

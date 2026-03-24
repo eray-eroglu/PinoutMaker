@@ -13,13 +13,32 @@ export interface PinData {
   isPwm: boolean;
 }
 
-export interface ProjectData {
-  image: string; // Base64 or Path
-  pins: PinData[];
+export interface LegendItem {
+  id: string;
+  text: string;
+  color: string;
+}
+
+export interface BoardImage {
+  id: string;
+  src: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
   rotation: number;
+}
+
+export interface ProjectData {
+  image?: string; // Base64 or Path (legacy support)
+  rotation?: number; // (legacy support)
+  images?: BoardImage[];
+  pins: PinData[];
   scale: number;
   position: { x: number; y: number };
   gapSize?: number;
+  legendItems?: LegendItem[];
+  isLegendVisible?: boolean;
 }
 
 declare global {
