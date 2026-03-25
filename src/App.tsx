@@ -16,7 +16,7 @@ function App() {
   const [pins, setPins] = useState<PinData[]>([]);
   const [selectedPinId, setSelectedPinId] = useState<string | null>(null);
   const [isAddingPin, setIsAddingPin] = useState(false);
-  const [currentFilePath, setCurrentFilePath] = useState<string | null>(null);
+  const [fileHandle, setFileHandle] = useState<any>(null);
   const [gapSize, setGapSize] = useState<number>(12);
   
   const DEFAULT_LEGEND_ITEMS: LegendItem[] = [
@@ -287,11 +287,9 @@ function App() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedPinId, selectedImageId, pins, images, scale, position, currentFilePath]);
+  }, [selectedPinId, selectedImageId, pins, images, scale, position, fileHandle]);
 
   const handleQuickSave = async () => {
-    if (!window.electronAPI) return;
-    
     const boardImages = images.map(img => ({
       id: img.id,
       src: img.src,
@@ -314,26 +312,22 @@ function App() {
 
     const json = JSON.stringify(projectData, null, 2);
 
-    if (currentFilePath) {
-      // Direct save
-      const result = await window.electronAPI.saveFileDirect(currentFilePath, json);
-      if (result.success) {
+    if (fileHandle) {
+      try {
+        const writable = await fileHandle.createWritable();
+        await writable.write(json);
+        await writable.close();
         console.log('Quick save successful');
-      } else {
-        alert('Failed to save file.');
+      } catch (error) {
+        console.error('Failed to quick save:', error);
+        alert('Failed to save file. You may need to Save As anew.');
       }
     } else {
-      // Fallback to Save As
-      const result = await window.electronAPI.saveFile(json);
-      if (result.success && result.path) {
-        setCurrentFilePath(result.path);
-      }
+      await handleSaveProject();
     }
   };
 
   const handleSaveProject = async () => {
-    if (!window.electronAPI) return;
-    
     const boardImages = images.map(img => ({
       id: img.id,
       src: img.src,
@@ -355,24 +349,60 @@ function App() {
     };
 
     const json = JSON.stringify(projectData, null, 2);
-    const result = await window.electronAPI.saveFile(json);
-    if (result.success && result.path) {
-      setCurrentFilePath(result.path);
+    
+    try {
+      if ('showSaveFilePicker' in window) {
+        const handle = await (window as any).showSaveFilePicker({
+          suggestedName: 'pinout-project.json',
+          types: [{ description: 'JSON Files', accept: { 'application/json': ['.json'] } }],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(json);
+        await writable.close();
+        setFileHandle(handle);
+      } else {
+        const blob = new Blob([json], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'pinout-project.json';
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+    } catch (error) {
+      console.error('Save failed:', error);
     }
   };
 
   const handleLoadProject = async () => {
-    if (!window.electronAPI) return;
-    
-    const result = await window.electronAPI.loadFile();
-    if (!result || !result.content) return;
-    
-    if (result.path) {
-      setCurrentFilePath(result.path);
-    }
-
     try {
-      const data: ProjectData = JSON.parse(result.content);
+      let content = null;
+      if ('showOpenFilePicker' in window) {
+        const [handle] = await (window as any).showOpenFilePicker({
+          types: [{ description: 'JSON Files', accept: { 'application/json': ['.json'] } }],
+        });
+        const file = await handle.getFile();
+        content = await file.text();
+        setFileHandle(handle);
+      } else {
+        content = await new Promise<string | null>((resolve) => {
+          const input = document.createElement('input');
+          input.type = 'file';
+          input.accept = '.json';
+          input.onchange = async (e) => {
+            const file = (e.target as HTMLInputElement).files?.[0];
+            if (file) {
+              resolve(await file.text());
+            } else {
+              resolve(null);
+            }
+          };
+          input.click();
+        });
+      }
+
+      if (!content) return;
+      const data: ProjectData = JSON.parse(content);
       
       if (data.image) {
         // Legacy single image support
@@ -406,11 +436,7 @@ function App() {
       setScale(data.scale || 1);
       setPosition(data.position || { x: 0, y: 0 });
       setGapSize(data.gapSize ?? 12);
-      if (data.legendItems && data.legendItems.length > 0) {
-        setLegendItems(data.legendItems);
-      } else {
-        setLegendItems(DEFAULT_LEGEND_ITEMS);
-      }
+      setLegendItems(data.legendItems && data.legendItems.length > 0 ? data.legendItems : DEFAULT_LEGEND_ITEMS);
       setIsLegendVisible(data.isLegendVisible ?? true);
       
     } catch (e) {
@@ -656,13 +682,7 @@ function App() {
 
         pdf.addImage(dataUrl, 'JPEG', marginX, marginY, printWidth, printHeight);
 
-        const pdfBuffer = pdf.output('arraybuffer');
-        
-        if (window.electronAPI) {
-            await window.electronAPI.savePdf(pdfBuffer);
-        } else {
-             pdf.save('pinout-diagram.pdf');
-        }
+        pdf.save('pinout-diagram.pdf');
 
     } catch (e) {
         console.error("PDF Export failed", e);

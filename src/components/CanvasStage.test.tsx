@@ -57,19 +57,25 @@ describe('CanvasStage - Drag Snapping (Magnets)', () => {
     }
   ];
 
-  const defaultProps = {
-    image: null,
-    imageRotation: 0,
+  const defaultProps: any = {
+    images: [],
+    onUpdateImage: vi.fn(),
+    selectedImageId: null,
+    onSelectImage: vi.fn(),
     pins: dummyPins,
     selectedPinId: null,
     onSelectPin: vi.fn(),
     onUpdatePin: vi.fn(),
     onDoubleClickPin: vi.fn(),
+    isAddingPin: false,
+    onCreatePin: vi.fn(),
     scale: 1,
     setScale: vi.fn(),
     position: { x: 0, y: 0 },
     setPosition: vi.fn(),
     gapSize: 20,
+    legendItems: [],
+    isLegendVisible: true,
   };
 
   beforeEach(() => {
