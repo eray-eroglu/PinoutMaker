@@ -1,9 +1,10 @@
 import { useEffect, forwardRef, useState  } from 'react';
 import { Stage, Layer, Line, Rect, Image as KonvaImage  } from 'react-konva';
 import Konva from 'konva';
-import type { PinData, LegendItem } from '../types';
+import type { PinData, LineData, LegendItem } from '../types';
 import type { LoadedImage } from '../App';
 import { PinComponent } from './PinComponent';
+import { LineComponent } from './LineComponent';
 
 interface CanvasStageProps {
   images: LoadedImage[];
@@ -15,6 +16,12 @@ interface CanvasStageProps {
   onSelectPin: (id: string | null) => void;
   onUpdatePin: (pin: PinData, saveHistory?: boolean) => void;
   onDoubleClickPin: (id: string, currentText: string) => void;
+  lines: LineData[];
+  selectedLineId: string | null;
+  onSelectLine: (id: string | null) => void;
+  onUpdateLine: (line: LineData, saveHistory?: boolean) => void;
+  isAddingLine?: boolean;
+  onCreateLine?: (x: number, y: number) => void;
   isAddingPin?: boolean;
   onCreatePin?: (x: number, y: number) => void;
   scale: number;
@@ -37,6 +44,12 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
   onSelectPin,
   onUpdatePin,
   onDoubleClickPin,
+  lines,
+  selectedLineId,
+  onSelectLine,
+  onUpdateLine,
+  isAddingLine = false,
+  onCreateLine,
   isAddingPin = false,
   onCreatePin,
   scale,
@@ -125,10 +138,22 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
       const pos = transform.point(pointer);
       
       onCreatePin(pos.x, pos.y);
+    } else if (isAddingLine && onCreateLine) {
+      const stage = e.target.getStage();
+      if (!stage) return;
+      
+      const pointer = stage.getPointerPosition();
+      if (!pointer) return;
+
+      const transform = stage.getAbsoluteTransform().copy().invert();
+      const pos = transform.point(pointer);
+      
+      onCreateLine(pos.x, pos.y);
     } else {
       // Deselect if clicking on empty space (Stage, Grid)
       onSelectPin(null);
       onSelectImage(null);
+      if (onSelectLine) onSelectLine(null);
     }
   };
 
@@ -285,11 +310,11 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
   // Grid generation
   const gridSize = 50;
   const GRID_LIMIT = 2000; // 4000x4000 area
-  const lines = [];
+  const gridLines = [];
 
   for (let i = -GRID_LIMIT; i <= GRID_LIMIT; i += gridSize) {
     // Vertical
-    lines.push(
+    gridLines.push(
       <Line
         key={`v-${i}`}
         points={[i, -GRID_LIMIT, i, GRID_LIMIT]}
@@ -299,7 +324,7 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
       />
     );
     // Horizontal
-    lines.push(
+    gridLines.push(
       <Line
         key={`h-${i}`}
         points={[-GRID_LIMIT, i, GRID_LIMIT, i]}
@@ -313,12 +338,12 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
   return (
     <div 
       className='flex-1 bg-gray-50 relative overflow-hidden'
-      style={{ cursor: isAddingPin ? 'crosshair' : 'default' }}
+      style={{ cursor: isAddingPin || isAddingLine ? 'crosshair' : 'default' }}
     >
       <Stage
         width={width}
         height={height}
-        draggable={!isAddingPin}
+        draggable={!isAddingPin && !isAddingLine}
         onWheel={handleWheel}
         scaleX={scale}
         scaleY={scale}
@@ -334,8 +359,8 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
         onTap={handleStageClick}
         ref={ref}
       >
-        <Layer name="grid-layer">
-          {lines}
+        <Layer className="grid-layer" listening={false}>
+          {gridLines}
         </Layer>
         <Layer name="content-layer">
           {images.map(img => (
@@ -350,11 +375,13 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
                 e.cancelBubble = true;
                 onSelectImage(img.id);
                 onSelectPin(null);
+                if (onSelectLine) onSelectLine(null);
               }}
               onTap={(e) => {
                 e.cancelBubble = true;
                 onSelectImage(img.id);
                 onSelectPin(null);
+                if (onSelectLine) onSelectLine(null);
               }}
               onDragEnd={(e) => {
                 const node = e.target;
@@ -378,12 +405,27 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
               onSelect={(id) => {
                 onSelectPin(id);
                 onSelectImage(null);
+                if (onSelectLine) onSelectLine(null);
               }}
               onUpdate={onUpdatePin}
               onDoubleClick={onDoubleClickPin}
               onDragMove={(id, x, y, isCtrlPressed) => handlePinDragMove(id, x, y, isCtrlPressed)}
               onDragEnd={handlePinDragEnd}
               anchorSize={anchorSize}
+            />
+          ))}
+          {lines.map((line) => (
+            <LineComponent
+              key={line.id}
+              line={line}
+              scale={scale}
+              isSelected={line.id === selectedLineId}
+              onSelect={(id) => {
+                if (onSelectLine) onSelectLine(id);
+                onSelectImage(null);
+                onSelectPin(null);
+              }}
+              onUpdate={onUpdateLine}
             />
           ))}
           {/* Alignment Guides */}

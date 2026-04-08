@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { TopBar } from './components/TopBar';
 import { Sidebar } from './components/Sidebar';
 import { CanvasStage } from './components/CanvasStage';
-import type { PinData, ProjectData, LegendItem, BoardImage } from './types';
+import type { PinData, LineData, ProjectData, LegendItem, BoardImage } from './types';
 
 export interface LoadedImage extends BoardImage {
   element: HTMLImageElement;
@@ -15,7 +15,10 @@ function App() {
   const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
   const [pins, setPins] = useState<PinData[]>([]);
   const [selectedPinId, setSelectedPinId] = useState<string | null>(null);
+  const [lines, setLines] = useState<LineData[]>([]);
+  const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
   const [isAddingPin, setIsAddingPin] = useState(false);
+  const [isAddingLine, setIsAddingLine] = useState(false);
   const [fileHandle, setFileHandle] = useState<any>(null);
   const [gapSize, setGapSize] = useState<number>(12);
   const [anchorSize, setAnchorSize] = useState<number>(5);
@@ -44,15 +47,17 @@ function App() {
 
   const stageRef = useRef<Konva.Stage>(null);
   const copiedPinRef = useRef<PinData | null>(null); // For Ctrl+C/V
+  const copiedLineRef = useRef<LineData | null>(null); // For Ctrl+C/V
 
   // Undo / Redo History
-  type HistoryState = { pins: PinData[]; images: LoadedImage[] };
+  type HistoryState = { pins: PinData[]; lines: LineData[]; images: LoadedImage[] };
   const pastRef = useRef<HistoryState[]>([]);
   const futureRef = useRef<HistoryState[]>([]);
 
   const pushHistory = () => {
     pastRef.current.push({
       pins: pins.map(p => ({...p})),
+      lines: lines.map(l => ({...l})),
       images: images.map(i => ({...i}))
     });
     futureRef.current = [];
@@ -65,9 +70,11 @@ function App() {
     const prev = pastRef.current.pop()!;
     futureRef.current.push({
       pins: pins.map(p => ({...p})),
+      lines: lines.map(l => ({...l})),
       images: images.map(i => ({...i}))
     });
     setPins(prev.pins);
+    setLines(prev.lines);
     setImages(prev.images);
   };
 
@@ -76,9 +83,11 @@ function App() {
     const next = futureRef.current.pop()!;
     pastRef.current.push({
       pins: pins.map(p => ({...p})),
+      lines: lines.map(l => ({...l})),
       images: images.map(i => ({...i}))
     });
     setPins(next.pins);
+    setLines(next.lines);
     setImages(next.images);
   };
 
@@ -123,7 +132,16 @@ function App() {
 
   const toggleAddPinMode = () => {
     setIsAddingPin(!isAddingPin);
+    setIsAddingLine(false);
     setSelectedPinId(null);
+    setSelectedLineId(null);
+  };
+
+  const toggleAddLineMode = () => {
+    setIsAddingLine(!isAddingLine);
+    setIsAddingPin(false);
+    setSelectedPinId(null);
+    setSelectedLineId(null);
   };
 
   const createPinAt = (x: number, y: number) => {
@@ -151,9 +169,30 @@ function App() {
     setIsAddingPin(false);
   };
 
+  const createLineAt = (x: number, y: number) => {
+    const newLine: LineData = {
+      id: crypto.randomUUID(),
+      x1: x,
+      y1: y,
+      x2: x + (100 / scale),
+      y2: y + (100 / scale),
+      color: '#3b82f6',
+      thickness: 2
+    };
+    pushHistory();
+    setLines((prev) => [...prev, newLine]);
+    setSelectedLineId(newLine.id);
+    setIsAddingLine(false);
+  };
+
   const updatePin = (updatedPin: PinData, saveHistory = true) => {
     if (saveHistory) pushHistory();
     setPins((prevPins) => prevPins.map((pin) => (pin.id === updatedPin.id ? updatedPin : pin)));
+  };
+
+  const updateLine = (updatedLine: LineData, saveHistory = true) => {
+    if (saveHistory) pushHistory();
+    setLines((prevLines) => prevLines.map((line) => (line.id === updatedLine.id ? updatedLine : line)));
   };
 
   const deletePin = () => {
@@ -161,6 +200,10 @@ function App() {
       pushHistory();
       setPins((prevPins) => prevPins.filter((pin) => pin.id !== selectedPinId));
       setSelectedPinId(null);
+    } else if (selectedLineId) {
+      pushHistory();
+      setLines((prevLines) => prevLines.filter((line) => line.id !== selectedLineId));
+      setSelectedLineId(null);
     } else if (selectedImageId) {
       pushHistory();
       setImages((prev) => prev.filter((img) => img.id !== selectedImageId));
@@ -170,6 +213,18 @@ function App() {
 
   const selectPin = (id: string | null) => {
     setSelectedPinId(id);
+    if (id) {
+      setSelectedLineId(null);
+      setSelectedImageId(null);
+    }
+  };
+
+  const selectLine = (id: string | null) => {
+    setSelectedLineId(id);
+    if (id) {
+      setSelectedPinId(null);
+      setSelectedImageId(null);
+    }
   };
   
   const handlePinDoubleClick = (id: string) => {
@@ -178,15 +233,17 @@ function App() {
     // We can also focus the sidebar input programmatically if needed.
     console.log("App: handlePinDoubleClick", id);
     setSelectedPinId(id);
+    setSelectedLineId(null);
+    setSelectedImageId(null);
     
     // Dispatch a custom event to focus the sidebar input
     window.dispatchEvent(new CustomEvent('focus-sidebar-input'));
   };
 
   const selectedPin = pins.find((p) => p.id === selectedPinId) || null;
+  const selectedLine = lines.find((l) => l.id === selectedLineId) || null;
   const selectedImage = images.find(img => img.id === selectedImageId) || null;
 
-  // Handle Ctrl+C / Ctrl+V
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ignore if user is typing in an input field
@@ -217,6 +274,20 @@ function App() {
           pushHistory();
           setPins((prevPins) => prevPins.filter((p) => p.id !== selectedPinId));
           setSelectedPinId(null);
+        } else if (selectedLineId) {
+          const activeElement = document.activeElement as HTMLElement | null;
+          if (
+            activeElement &&
+            (activeElement.tagName === 'INPUT' ||
+              activeElement.tagName === 'TEXTAREA' ||
+              activeElement.isContentEditable)
+          ) {
+            return;
+          }
+          
+          pushHistory();
+          setLines((prevLines) => prevLines.filter((l) => l.id !== selectedLineId));
+          setSelectedLineId(null);
         } else if (selectedImageId) {
           pushHistory();
           setImages((prev) => prev.filter((img) => img.id !== selectedImageId));
@@ -229,7 +300,13 @@ function App() {
         const pinToCopy = pins.find(p => p.id === selectedPinId);
         if (pinToCopy) {
           copiedPinRef.current = { ...pinToCopy }; // Deep copy not needed if object is flat, but spread is good
-          console.log('Copied pin:', pinToCopy.id);
+          copiedLineRef.current = null;
+        }
+        
+        const lineToCopy = lines.find(l => l.id === selectedLineId);
+        if (lineToCopy) {
+          copiedLineRef.current = { ...lineToCopy };
+          copiedPinRef.current = null;
         }
       }
 
@@ -255,9 +332,27 @@ function App() {
           pushHistory();
           setPins((prevPins) => [...prevPins, newPin]);
           setSelectedPinId(newId);
+          setSelectedLineId(null);
           
           // Update clipboard to the new pin so the next paste chains from this one
           copiedPinRef.current = newPin;
+        } else if (copiedLineRef.current) {
+          const original = copiedLineRef.current;
+          const newId = crypto.randomUUID();
+          const newLine: LineData = {
+            ...original,
+            id: newId,
+            x1: original.x1 + 20,
+            y1: original.y1 + 20,
+            x2: original.x2 + 20,
+            y2: original.y2 + 20,
+          };
+
+          pushHistory();
+          setLines((prevLines) => [...prevLines, newLine]);
+          setSelectedLineId(newId);
+          setSelectedPinId(null);
+          copiedLineRef.current = newLine;
         }
       }
 
@@ -289,7 +384,7 @@ function App() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedPinId, selectedImageId, pins, images, scale, position, fileHandle]);
+  }, [selectedPinId, selectedLineId, selectedImageId, pins, lines, images, scale, position, fileHandle]);
 
   const handleQuickSave = async () => {
     const boardImages = images.map(img => ({
@@ -305,6 +400,7 @@ function App() {
     const projectData: ProjectData = {
       images: boardImages,
       pins,
+      lines,
       scale,
       position,
       gapSize,
@@ -344,6 +440,7 @@ function App() {
     const projectData: ProjectData = {
       images: boardImages,
       pins,
+      lines,
       scale,
       position,
       gapSize,
@@ -437,6 +534,7 @@ function App() {
       }
 
       setPins(data.pins || []);
+      setLines(data.lines || []);
       setScale(data.scale || 1);
       setPosition(data.position || { x: 0, y: 0 });
       setGapSize(data.gapSize ?? 12);
@@ -716,14 +814,16 @@ function App() {
       <TopBar
         onImport={handleImageUpload}
         onAddPin={toggleAddPinMode}
+        onAddLine={toggleAddLineMode}
         onDeletePin={deletePin}
         onRotateImage={handleRotateImage}
         onSave={handleSaveProject}
         onLoad={handleLoadProject}
         onExportPdf={handleExportPdf}
-        isPinSelected={!!selectedPinId || !!selectedImageId}
+        isPinSelected={!!selectedPinId || !!selectedLineId || !!selectedImageId}
         isImageLoaded={images.length > 0}
         isAddingPin={isAddingPin}
+        isAddingLine={isAddingLine}
       />
       <div className='flex flex-1 overflow-hidden'>
         <CanvasStage
@@ -737,6 +837,12 @@ function App() {
           onSelectPin={selectPin}
           onUpdatePin={updatePin}
           onDoubleClickPin={handlePinDoubleClick}
+          lines={lines}
+          selectedLineId={selectedLineId}
+          onSelectLine={selectLine}
+          onUpdateLine={updateLine}
+          isAddingLine={isAddingLine}
+          onCreateLine={createLineAt}
           isAddingPin={isAddingPin}
           onCreatePin={createPinAt}
           scale={scale}
@@ -751,6 +857,8 @@ function App() {
         <Sidebar 
           selectedPin={selectedPin} 
           onUpdatePin={updatePin} 
+          selectedLine={selectedLine}
+          onUpdateLine={updateLine}
           selectedImage={selectedImage}
           onUpdateImage={updateImage}
           onPushHistory={handlePushHistory}

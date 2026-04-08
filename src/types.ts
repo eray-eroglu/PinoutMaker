@@ -14,6 +14,17 @@ export interface PinData {
   isPwm: boolean;
 }
 
+export interface LineData {
+  id: string;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  isAngled?: boolean;
+  color: string;
+  thickness: number;
+}
+
 export interface LegendItem {
   id: string;
   text: string;
@@ -35,6 +46,7 @@ export interface ProjectData {
   rotation?: number; // (legacy support)
   images?: BoardImage[];
   pins: PinData[];
+  lines?: LineData[];
   scale: number;
   position: { x: number; y: number };
   gapSize?: number;

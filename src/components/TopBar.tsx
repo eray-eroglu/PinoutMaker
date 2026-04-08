@@ -12,6 +12,8 @@ interface TopBarProps {
   isPinSelected: boolean;
   isImageLoaded: boolean;
   isAddingPin: boolean;
+  onAddLine: () => void;
+  isAddingLine: boolean;
 }
 
 export const TopBar = ({
@@ -24,7 +26,9 @@ export const TopBar = ({
   onExportPdf,
   isPinSelected,
   isImageLoaded,
-  isAddingPin
+  isAddingPin,
+  onAddLine,
+  isAddingLine
 }: TopBarProps) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -107,6 +111,19 @@ export const TopBar = ({
       </button>
 
       <div className='w-px h-6 bg-gray-300 mx-2'></div>
+
+      <button
+        onClick={onAddLine}
+        className={`group relative flex items-center gap-2 px-3 py-1.5 border rounded text-sm cursor-pointer transition-colors ${isAddingLine
+          ? 'bg-blue-100 border-blue-300 text-blue-700'
+          : 'bg-white border-gray-300 hover:bg-gray-50 text-gray-700'
+          }`}
+      >
+        <Plus size={16} /> {isAddingLine ? 'Click on Board' : 'Draw Line'}
+        <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 delay-500 bg-gray-800 text-white text-xs rounded px-2 py-1 pointer-events-none z-50 whitespace-nowrap shadow-md">
+          Draw a free free-moving line with a start and end point
+        </div>
+      </button>
 
       <button
         onClick={onAddPin}

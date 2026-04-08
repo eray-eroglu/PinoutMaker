@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import type { PinData, LegendItem } from '../types';
+import type { PinData, LineData, LegendItem } from '../types';
 import type { LoadedImage } from '../App';
 import { isLightColor } from '../utils/colorUtils';
 
@@ -8,6 +8,8 @@ interface SidebarProps {
   onUpdatePin: (pin: PinData, saveHistory?: boolean) => void;
   selectedImage: LoadedImage | null;
   onUpdateImage: (img: LoadedImage, saveHistory?: boolean) => void;
+  selectedLine: LineData | null;
+  onUpdateLine: (line: LineData, saveHistory?: boolean) => void;
   onPushHistory: () => void;
   scale: number;
   gapSize: number;
@@ -56,7 +58,9 @@ const getSmartColor = (text: string): string | null => {
 };
 
 export const Sidebar = ({
-  selectedPin, onUpdatePin, selectedImage, onUpdateImage, onPushHistory, scale, gapSize, onGapSizeChange,
+  selectedPin, onUpdatePin, selectedImage, onUpdateImage, 
+  selectedLine, onUpdateLine,
+  onPushHistory, scale, gapSize, onGapSizeChange,
   legendItems, onLegendItemsChange, isLegendVisible, onLegendVisibilityChange, anchorSize, onAnchorSizeChange
 }: SidebarProps) => {
   const [customStep, setCustomStep] = useState<number>(5);
@@ -322,14 +326,61 @@ export const Sidebar = ({
       )}
 
       <h2 className='text-lg font-semibold mb-4 text-gray-700'>
-        Pin Properties
+        {selectedLine ? 'Line Properties' : 'Pin Properties'}
       </h2>
 
-      {!selectedPin ? (
+      {!selectedPin && !selectedLine ? (
         <div className='text-gray-400 text-sm'>
-          Select a pin to edit properties.
+          Select a pin or line to edit properties.
         </div>
-      ) : (
+      ) : selectedLine ? (
+        <div className='space-y-4'>
+           <div>
+            <label className='block text-sm font-medium text-gray-600 mb-2'>
+              Line Color
+            </label>
+            <div className='grid grid-cols-4 gap-2'>
+              {COLORS.map((c) => (
+                <div
+                  key={`line-c-${c}`}
+                  className={`w-8 h-8 rounded cursor-pointer transition-transform hover:scale-110`}
+                  style={{
+                    backgroundColor: c,
+                    boxShadow:
+                      selectedLine.color === c
+                        ? '0 0 0 2px white, 0 0 0 4px gray'
+                        : 'none',
+                  }}
+                  onClick={() => onUpdateLine({ ...selectedLine, color: c })}
+                ></div>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className='block text-sm font-medium text-gray-600 mb-1'>
+              Thickness (px)
+            </label>
+            <input
+              type='number'
+              min='1'
+              className='w-full border border-gray-300 rounded px-2 py-1.5 text-sm outline-none focus:border-blue-500'
+              value={selectedLine.thickness}
+              onChange={(e) => onUpdateLine({ ...selectedLine, thickness: Number(e.target.value) || 1 }, false)}
+              onBlur={() => onPushHistory()}
+            />
+          </div>
+          <div className='flex items-center gap-2'>
+            <input
+              type='checkbox'
+              id='angled-line-toggle'
+              className='rounded border-gray-300 text-blue-600 focus:ring-blue-500'
+              checked={selectedLine.isAngled || false}
+              onChange={(e) => onUpdateLine({ ...selectedLine, isAngled: e.target.checked }, true)}
+            />
+            <label htmlFor='angled-line-toggle' className='text-sm text-gray-600 cursor-pointer'>Angled Line</label>
+          </div>
+        </div>
+      ) : selectedPin ? (
         <div className='space-y-4'>
           <div>
             <label className='block text-sm font-medium text-gray-600 mb-1'>
@@ -482,7 +533,7 @@ export const Sidebar = ({
             </p>
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 };
