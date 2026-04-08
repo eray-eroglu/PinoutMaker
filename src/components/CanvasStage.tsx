@@ -24,6 +24,7 @@ interface CanvasStageProps {
   gapSize: number;
   legendItems: LegendItem[];
   isLegendVisible: boolean;
+  anchorSize: number;
 }
 
 export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
@@ -44,7 +45,8 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
   setPosition,
   gapSize,
   legendItems,
-  isLegendVisible
+  isLegendVisible,
+  anchorSize
 }, ref) => {
 
   const [dimensions, setDimensions] = useState({
@@ -340,6 +342,8 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
             <KonvaImage
               key={img.id}
               image={img.element}
+              width={img.width}
+              height={img.height}
               rotation={img.rotation}
               draggable={!isAddingPin}
               onClick={(e) => {
@@ -371,11 +375,15 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
               pin={pin}
               scale={scale}
               isSelected={pin.id === selectedPinId}
-              onSelect={(id) => onSelectPin(id)}
+              onSelect={(id) => {
+                onSelectPin(id);
+                onSelectImage(null);
+              }}
               onUpdate={onUpdatePin}
               onDoubleClick={onDoubleClickPin}
               onDragMove={(id, x, y, isCtrlPressed) => handlePinDragMove(id, x, y, isCtrlPressed)}
               onDragEnd={handlePinDragEnd}
+              anchorSize={anchorSize}
             />
           ))}
           {/* Alignment Guides */}

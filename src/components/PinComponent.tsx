@@ -3,6 +3,7 @@ import { Label, Tag, Text, Circle, Line } from 'react-konva';
 import Konva from 'konva';
 import type { PinData } from '../types';
 import { calculateManhattanPath, calculateWavePoints } from '../utils/lineUtils';
+import { isLightColor } from '../utils/colorUtils';
 
 interface PinComponentProps {
   pin: PinData;
@@ -16,6 +17,7 @@ interface PinComponentProps {
   onDragMove?: (id: string, x: number, y: number, isCtrlPressed: boolean) => { x: number, y: number } | void;
   onDragEnd?: () => void;
   onDoubleClick: (id: string, currentText: string) => void;
+  anchorSize: number;
 }
 
 export const PinComponent: React.FC<PinComponentProps> = ({
@@ -27,6 +29,7 @@ export const PinComponent: React.FC<PinComponentProps> = ({
   onDragMove,
   onDragEnd,
   onDoubleClick,
+  anchorSize,
 }) => {
   const labelRef = useRef<Konva.Label>(null);
   const anchorRef = useRef<Konva.Circle>(null);
@@ -215,8 +218,8 @@ export const PinComponent: React.FC<PinComponentProps> = ({
         ref={anchorRef}
         x={pin.targetX}
         y={pin.targetY}
-        radius={5}
-        fill={pin.color}
+        radius={Math.max(0.1, anchorSize)}
+        fill={anchorSize === 0 ? 'transparent' : pin.color}
         draggable
         scaleX={invScale}
         scaleY={invScale}
@@ -224,8 +227,8 @@ export const PinComponent: React.FC<PinComponentProps> = ({
         onDragEnd={handleAnchorDragEnd}
         onClick={handleSelect}
         onTap={handleSelect}
-        stroke={isSelected ? '#333' : undefined}
-        strokeWidth={isSelected ? 2 : 0}
+        stroke={isSelected && anchorSize > 0 ? '#333' : undefined}
+        strokeWidth={isSelected && anchorSize > 0 ? 2 : 0}
         strokeScaleEnabled={false}
         hitStrokeWidth={15}
       />
@@ -261,9 +264,9 @@ export const PinComponent: React.FC<PinComponentProps> = ({
           onClick={handleSelect}
           onTap={handleSelect}
           fill={
-            ['#FFD700', '#00FFFF', '#7FFFD4', '#F0F0F0', '#FFFFFF'].includes(pin.color)
+            pin.textColor || (isLightColor(pin.color)
               ? 'black'
-              : 'white'
+              : 'white')
           }
           padding={6}
           fontFamily='Inter, sans-serif'

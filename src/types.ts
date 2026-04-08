@@ -10,6 +10,7 @@ export interface PinData {
   labelHeight?: number; // Height of the label in world coordinates
   text: string;
   color: string;
+  textColor?: string;
   isPwm: boolean;
 }
 
@@ -39,5 +40,6 @@ export interface ProjectData {
   gapSize?: number;
   legendItems?: LegendItem[];
   isLegendVisible?: boolean;
+  anchorSize?: number;
 }
 

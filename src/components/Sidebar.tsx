@@ -1,9 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
 import type { PinData, LegendItem } from '../types';
+import type { LoadedImage } from '../App';
+import { isLightColor } from '../utils/colorUtils';
 
 interface SidebarProps {
   selectedPin: PinData | null;
   onUpdatePin: (pin: PinData, saveHistory?: boolean) => void;
+  selectedImage: LoadedImage | null;
+  onUpdateImage: (img: LoadedImage, saveHistory?: boolean) => void;
   onPushHistory: () => void;
   scale: number;
   gapSize: number;
@@ -12,6 +16,8 @@ interface SidebarProps {
   onLegendItemsChange: (items: LegendItem[]) => void;
   isLegendVisible: boolean;
   onLegendVisibilityChange: (visible: boolean) => void;
+  anchorSize: number;
+  onAnchorSizeChange: (size: number) => void;
 }
 
 const COLORS = [
@@ -33,7 +39,7 @@ const COLORS = [
 
 const getSmartColor = (text: string): string | null => {
   const upperText = text.toUpperCase().trim();
-  
+
   if (upperText === 'GND') return '#000000'; // GROUND
   if (['VCC', '5V', '3V3', 'VIN', 'VDD', 'VSS'].includes(upperText)) return '#dc2626'; // POWER
   if (['GPIO', 'PB', 'PA', 'PC'].includes(upperText) || (upperText.startsWith('P') && upperText.length <= 4 && !isNaN(Number(upperText.slice(2))))) return '#0d9488'; // PHYSICAL PIN
@@ -45,13 +51,13 @@ const getSmartColor = (text: string): string | null => {
   if (upperText.startsWith('TIM') || upperText.startsWith('CH')) return '#e11d48'; // TIMER & CHANNEL
   if (upperText.startsWith('USB') || ['D+', 'D-'].includes(upperText)) return '#65a30d'; // USB
   if (['EN', 'BOOT', 'RST', 'RESET'].includes(upperText)) return '#ca8a04'; // CONTROL
-  
+
   return null;
 };
 
-export const Sidebar = ({ 
-  selectedPin, onUpdatePin, onPushHistory, scale, gapSize, onGapSizeChange,
-  legendItems, onLegendItemsChange, isLegendVisible, onLegendVisibilityChange
+export const Sidebar = ({
+  selectedPin, onUpdatePin, selectedImage, onUpdateImage, onPushHistory, scale, gapSize, onGapSizeChange,
+  legendItems, onLegendItemsChange, isLegendVisible, onLegendVisibilityChange, anchorSize, onAnchorSizeChange
 }: SidebarProps) => {
   const [customStep, setCustomStep] = useState<number>(5);
   const [isTableSettingsExpanded, setIsTableSettingsExpanded] = useState<boolean>(false);
@@ -73,11 +79,11 @@ export const Sidebar = ({
     if (selectedPin) {
       const newText = e.target.value;
       const smartColor = getSmartColor(newText);
-      
-      onUpdatePin({ 
-        ...selectedPin, 
+
+      onUpdatePin({
+        ...selectedPin,
         text: newText,
-        color: smartColor || selectedPin.color 
+        color: smartColor || selectedPin.color
       }, false);
     }
   };
@@ -94,11 +100,17 @@ export const Sidebar = ({
     }
   };
 
+  const handleTextColorChange = (color: string) => {
+    if (selectedPin) {
+      onUpdatePin({ ...selectedPin, textColor: color });
+    }
+  };
+
   // --- Mesafe Ayarlama Mantığı ---
   // Kullanıcıdan px cinsinden değer alıp, bunu pinin x/y koordinatlarına yansıtacağız.
   // "Solundaki/Sağındaki" derken, en yakın pini veya hedef noktayı (anchor) baz alabiliriz.
   // Şimdilik en basit haliyle: Seçili pinin X koordinatını manuel olarak px cinsinden kaydırma.
-  
+
   const handleMoveLeft = (px: number) => {
     if (selectedPin) {
       // Sola kaydırmak için X değerini azaltıyoruz.
@@ -116,7 +128,7 @@ export const Sidebar = ({
       onUpdatePin({ ...selectedPin, x: newX, labelDx: newDx });
     }
   };
-  
+
   const handleMoveUp = (px: number) => {
     if (selectedPin) {
       const newY = selectedPin.y - px;
@@ -143,10 +155,10 @@ export const Sidebar = ({
           Global Gap Size (px)
         </label>
         <div className="flex items-center gap-2">
-          <input 
-            type="number" 
-            min="0" 
-            max="100" 
+          <input
+            type="number"
+            min="0"
+            max="100"
             value={gapSize}
             onChange={(e) => onGapSizeChange(Number(e.target.value) || 12)}
             className="w-20 border border-gray-300 rounded px-2 py-1 text-sm outline-none focus:border-blue-500"
@@ -155,7 +167,31 @@ export const Sidebar = ({
         </div>
       </div>
 
-      <button 
+      <div className="mb-6">
+        <label className='block text-sm font-medium text-gray-600 mb-2'>
+          Anchor Size
+        </label>
+        <div className="flex items-center gap-2">
+          <input
+            type="range"
+            min="0"
+            max="15"
+            step="1"
+            value={anchorSize}
+            onChange={(e) => onAnchorSizeChange(Number(e.target.value))}
+            className="flex-1 custom-range-slider"
+            style={{
+              background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${(anchorSize / 15) * 100}%, #e5e7eb ${(anchorSize / 15) * 100}%, #e5e7eb 100%)`
+            }}
+          />
+          <span className="text-xs text-gray-500 w-8 text-right">{anchorSize}px</span>
+        </div>
+        {anchorSize === 0 && (
+          <p className="text-[10px] text-gray-400 mt-1">Anchor is hidden. Straight line only.</p>
+        )}
+      </div>
+
+      <button
         onClick={() => setIsTableSettingsExpanded(!isTableSettingsExpanded)}
         className='flex items-center justify-between w-full text-left text-lg font-semibold mb-4 text-gray-700 hover:text-gray-900'
       >
@@ -164,13 +200,13 @@ export const Sidebar = ({
           {isTableSettingsExpanded ? '▲' : '▼'}
         </span>
       </button>
-            
+
       {isTableSettingsExpanded && (
         <div className="mb-6 space-y-4">
           <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
-            <input 
-              type="checkbox" 
-              checked={isLegendVisible} 
+            <input
+              type="checkbox"
+              checked={isLegendVisible}
               onChange={(e) => onLegendVisibilityChange(e.target.checked)}
               className="rounded border-gray-300 text-blue-600"
             />
@@ -182,9 +218,9 @@ export const Sidebar = ({
               <div className="text-xs font-semibold text-gray-500 uppercase">Rows</div>
               {legendItems.map((item, index) => (
                 <div key={item.id} className="flex items-center gap-2">
-                  <input 
-                    type="color" 
-                    value={item.color} 
+                  <input
+                    type="color"
+                    value={item.color}
                     onChange={(e) => {
                       const newItems = [...legendItems];
                       newItems[index].color = e.target.value;
@@ -192,9 +228,9 @@ export const Sidebar = ({
                     }}
                     className="w-6 h-6 p-0 border-0 rounded cursor-pointer shrink-0"
                   />
-                  <input 
-                    type="text" 
-                    value={item.text} 
+                  <input
+                    type="text"
+                    value={item.text}
                     onChange={(e) => {
                       const newItems = [...legendItems];
                       newItems[index].text = e.target.value;
@@ -202,7 +238,7 @@ export const Sidebar = ({
                     }}
                     className="flex-1 min-w-0 border border-gray-300 rounded px-2 py-1 text-xs outline-none focus:border-blue-500"
                   />
-                  <button 
+                  <button
                     onClick={() => {
                       onLegendItemsChange(legendItems.filter((_, i) => i !== index));
                     }}
@@ -212,7 +248,7 @@ export const Sidebar = ({
                   </button>
                 </div>
               ))}
-              <button 
+              <button
                 onClick={() => {
                   onLegendItemsChange([...legendItems, { id: crypto.randomUUID(), text: 'NEW ROW', color: '#888888' }]);
                 }}
@@ -226,6 +262,64 @@ export const Sidebar = ({
       )}
 
       <hr className="my-4 border-gray-300" />
+
+      {selectedImage && (
+        <>
+          <h2 className='text-lg font-semibold mb-4 text-gray-700'>
+            Image Properties
+          </h2>
+          <div className='space-y-4 mb-4'>
+            <div>
+              <label className='block text-sm font-medium text-gray-600 mb-1'>
+                Width (px)
+              </label>
+              <input
+                type='number'
+                className='w-full border border-gray-300 rounded px-2 py-1.5 text-sm outline-none focus:border-blue-500'
+                value={Math.round(selectedImage.width)}
+                onChange={(e) => {
+                  const newW = Number(e.target.value);
+                  if (newW > 0) {
+                    const ratio = selectedImage.height / selectedImage.width;
+                    onUpdateImage({
+                      ...selectedImage,
+                      width: newW,
+                      height: newW * ratio
+                    }, false);
+                  }
+                }}
+                onBlur={() => onPushHistory()}
+              />
+            </div>
+            <div>
+              <label className='block text-sm font-medium text-gray-600 mb-1'>
+                Height (px)
+              </label>
+              <input
+                type='number'
+                className='w-full border border-gray-300 rounded px-2 py-1.5 text-sm outline-none focus:border-blue-500'
+                value={Math.round(selectedImage.height)}
+                onChange={(e) => {
+                  const newH = Number(e.target.value);
+                  if (newH > 0) {
+                    const ratio = selectedImage.width / selectedImage.height;
+                    onUpdateImage({
+                      ...selectedImage,
+                      height: newH,
+                      width: newH * ratio
+                    }, false);
+                  }
+                }}
+                onBlur={() => onPushHistory()}
+              />
+            </div>
+            <p className="text-xs text-gray-400">
+              Aspect ratio is maintained automatically.
+            </p>
+          </div>
+          <hr className="my-4 border-gray-300" />
+        </>
+      )}
 
       <h2 className='text-lg font-semibold mb-4 text-gray-700'>
         Pin Properties
@@ -270,6 +364,47 @@ export const Sidebar = ({
                   onClick={() => handleColorChange(c)}
                 ></div>
               ))}
+              <div
+                className={`w-8 h-8 rounded cursor-pointer transition-transform hover:scale-110 relative flex items-center justify-center overflow-hidden`}
+                style={{
+                  background: 'conic-gradient(red, yellow, lime, aqua, blue, magenta, red)',
+                  boxShadow: !COLORS.includes(selectedPin.color)
+                    ? '0 0 0 2px white, 0 0 0 4px gray'
+                    : 'none',
+                }}
+                title="Custom Color"
+              >
+                <input
+                  type="color"
+                  value={selectedPin.color}
+                  onChange={(e) => handleColorChange(e.target.value)}
+                  className="opacity-0 absolute inset-0 w-full h-full cursor-pointer"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label className='block text-sm font-medium text-gray-600 mb-2'>
+              Text Color
+            </label>
+            <div className='flex items-center gap-2'>
+              <div
+                className={`w-8 h-8 rounded cursor-pointer transition-transform hover:scale-110 relative flex items-center justify-center overflow-hidden border border-gray-300`}
+                title="Custom Text Color"
+              >
+                <input
+                  type="color"
+                  value={selectedPin.textColor || (isLightColor(selectedPin.color) ? '#000000' : '#ffffff')}
+                  onChange={(e) => handleTextColorChange(e.target.value)}
+                  className="opacity-0 absolute inset-0 w-full h-full cursor-pointer z-10"
+                />
+                <div
+                  className="w-full h-full"
+                  style={{ backgroundColor: selectedPin.textColor || (isLightColor(selectedPin.color) ? '#000000' : '#ffffff') }}
+                ></div>
+              </div>
+              <span className="text-xs text-gray-500">Pick a custom text color</span>
             </div>
           </div>
 
@@ -289,13 +424,13 @@ export const Sidebar = ({
             <label className='block text-sm font-medium text-gray-600 mb-2'>
               Position Adjustment (px)
             </label>
-            
+
             <div className="flex items-center gap-2 mb-3">
               <span className="text-xs text-gray-500">Step:</span>
-              <input 
-                type="number" 
-                min="1" 
-                max="100" 
+              <input
+                type="number"
+                min="1"
+                max="100"
                 value={customStep}
                 onChange={(e) => setCustomStep(Number(e.target.value) || 1)}
                 className="w-16 border border-gray-300 rounded px-2 py-1 text-xs outline-none focus:border-blue-500"
@@ -305,7 +440,7 @@ export const Sidebar = ({
 
             <div className="grid grid-cols-3 gap-2 text-center">
               <div></div>
-              <button 
+              <button
                 onClick={() => handleMoveUp(customStep)}
                 className="bg-gray-200 hover:bg-gray-300 text-gray-700 py-1 px-2 rounded text-xs font-bold"
                 title={`Move Up ${customStep}px`}
@@ -313,8 +448,8 @@ export const Sidebar = ({
                 ↑
               </button>
               <div></div>
-              
-              <button 
+
+              <button
                 onClick={() => handleMoveLeft(customStep)}
                 className="bg-gray-200 hover:bg-gray-300 text-gray-700 py-1 px-2 rounded text-xs font-bold"
                 title={`Move Left ${customStep}px`}
@@ -324,16 +459,16 @@ export const Sidebar = ({
               <div className="flex items-center justify-center text-xs text-gray-500 font-medium">
                 {customStep}px
               </div>
-              <button 
+              <button
                 onClick={() => handleMoveRight(customStep)}
                 className="bg-gray-200 hover:bg-gray-300 text-gray-700 py-1 px-2 rounded text-xs font-bold"
                 title={`Move Right ${customStep}px`}
               >
                 →
               </button>
-              
+
               <div></div>
-              <button 
+              <button
                 onClick={() => handleMoveDown(customStep)}
                 className="bg-gray-200 hover:bg-gray-300 text-gray-700 py-1 px-2 rounded text-xs font-bold"
                 title={`Move Down ${customStep}px`}

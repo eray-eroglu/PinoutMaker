@@ -18,6 +18,7 @@ function App() {
   const [isAddingPin, setIsAddingPin] = useState(false);
   const [fileHandle, setFileHandle] = useState<any>(null);
   const [gapSize, setGapSize] = useState<number>(12);
+  const [anchorSize, setAnchorSize] = useState<number>(5);
   
   const DEFAULT_LEGEND_ITEMS: LegendItem[] = [
     { id: '1', text: 'POWER', color: '#dc2626' },
@@ -183,6 +184,7 @@ function App() {
   };
 
   const selectedPin = pins.find((p) => p.id === selectedPinId) || null;
+  const selectedImage = images.find(img => img.id === selectedImageId) || null;
 
   // Handle Ctrl+C / Ctrl+V
   useEffect(() => {
@@ -307,7 +309,8 @@ function App() {
       position,
       gapSize,
       legendItems,
-      isLegendVisible
+      isLegendVisible,
+      anchorSize
     };
 
     const json = JSON.stringify(projectData, null, 2);
@@ -345,7 +348,8 @@ function App() {
       position,
       gapSize,
       legendItems,
-      isLegendVisible
+      isLegendVisible,
+      anchorSize
     };
 
     const json = JSON.stringify(projectData, null, 2);
@@ -438,6 +442,7 @@ function App() {
       setGapSize(data.gapSize ?? 12);
       setLegendItems(data.legendItems && data.legendItems.length > 0 ? data.legendItems : DEFAULT_LEGEND_ITEMS);
       setIsLegendVisible(data.isLegendVisible ?? true);
+      setAnchorSize(data.anchorSize ?? 5);
       
     } catch (e) {
       console.error("Failed to parse project file", e);
@@ -741,10 +746,13 @@ function App() {
           gapSize={gapSize}
           legendItems={legendItems}
           isLegendVisible={isLegendVisible}
+          anchorSize={anchorSize}
         />
         <Sidebar 
           selectedPin={selectedPin} 
           onUpdatePin={updatePin} 
+          selectedImage={selectedImage}
+          onUpdateImage={updateImage}
           onPushHistory={handlePushHistory}
           scale={scale}
           gapSize={gapSize}
@@ -753,6 +761,8 @@ function App() {
           onLegendItemsChange={setLegendItems}
           isLegendVisible={isLegendVisible}
           onLegendVisibilityChange={setIsLegendVisible}
+          anchorSize={anchorSize}
+          onAnchorSizeChange={setAnchorSize}
         />
       </div>
     </div>
