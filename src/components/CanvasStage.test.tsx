@@ -76,6 +76,13 @@ describe('CanvasStage - Drag Snapping (Magnets)', () => {
     gapSize: 20,
     legendItems: [],
     isLegendVisible: true,
+    anchorSize: 5,
+    lines: [],
+    selectedLineId: null,
+    onSelectLine: vi.fn(),
+    onUpdateLine: vi.fn(),
+    isAddingLine: false,
+    onCreateLine: vi.fn(),
   };
 
   beforeEach(() => {

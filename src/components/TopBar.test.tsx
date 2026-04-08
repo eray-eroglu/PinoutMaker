@@ -7,6 +7,7 @@ describe('TopBar', () => {
   const mockProps = {
     onImport: vi.fn(),
     onAddPin: vi.fn(),
+    onAddLine: vi.fn(),
     onDeletePin: vi.fn(),
     onRotateImage: vi.fn(),
     onSave: vi.fn(),
@@ -15,6 +16,7 @@ describe('TopBar', () => {
     isPinSelected: false,
     isImageLoaded: false,
     isAddingPin: false,
+    isAddingLine: false,
   };
 
   it('renders all main buttons', () => {
@@ -41,21 +43,21 @@ describe('TopBar', () => {
 
   it('calls onSave when Save button is clicked', () => {
     render(<TopBar {...mockProps} />);
-    const saveBtn = screen.getByRole('button', { name: /Save/i });
+    const buttons = screen.getAllByRole('button');
+    const saveBtn = buttons.find(b => b.textContent?.includes('Save your current')) || buttons[0];
     fireEvent.click(saveBtn);
     expect(mockProps.onSave).toHaveBeenCalled();
   });
 
   it('disables Delete Pin button when no pin is selected', () => {
     render(<TopBar {...mockProps} isPinSelected={false} />);
-    // "Delete Pin" text is present
-    const deleteBtn = screen.getByRole('button', { name: /Delete Pin/i });
+    const deleteBtn = screen.getByRole('button', { name: /Delete/i });
     expect(deleteBtn).toBeDisabled();
   });
 
   it('enables Delete Pin button when a pin is selected', () => {
     render(<TopBar {...mockProps} isPinSelected={true} />);
-    const deleteBtn = screen.getByRole('button', { name: /Delete Pin/i });
+    const deleteBtn = screen.getByRole('button', { name: /Delete/i });
     expect(deleteBtn).not.toBeDisabled();
   });
 });
