@@ -16,10 +16,13 @@ export interface PinData {
 
 export interface LineData {
   id: string;
-  x1: number;
-  y1: number;
-  x2: number;
-  y2: number;
+  /** Multi-point polyline [x0,y0, x1,y1, ...]. All segments are orthogonal (Manhattan). */
+  points: number[];
+  /** Legacy fields kept for backward compatibility when loading old projects */
+  x1?: number;
+  y1?: number;
+  x2?: number;
+  y2?: number;
   isAngled?: boolean;
   color: string;
   thickness: number;

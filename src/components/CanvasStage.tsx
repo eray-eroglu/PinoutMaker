@@ -1,10 +1,11 @@
-import { useEffect, forwardRef, useState  } from 'react';
-import { Stage, Layer, Line, Rect, Image as KonvaImage  } from 'react-konva';
+import { useEffect, forwardRef, useState, useRef, useCallback  } from 'react';
+import { Stage, Layer, Line, Rect, Image as KonvaImage, Circle, Group } from 'react-konva';
 import Konva from 'konva';
 import type { PinData, LineData, LegendItem } from '../types';
 import type { LoadedImage } from '../App';
 import { PinComponent } from './PinComponent';
 import { LineComponent } from './LineComponent';
+import { calculateManhattanPath } from '../utils/lineUtils';
 
 interface CanvasStageProps {
   images: LoadedImage[];
@@ -21,7 +22,7 @@ interface CanvasStageProps {
   onSelectLine: (id: string | null) => void;
   onUpdateLine: (line: LineData, saveHistory?: boolean) => void;
   isAddingLine?: boolean;
-  onCreateLine?: (x: number, y: number) => void;
+  onCreateLine?: (points: number[]) => void;
   isAddingPin?: boolean;
   onCreatePin?: (x: number, y: number) => void;
   scale: number;
@@ -67,6 +68,11 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
     height: window.innerHeight - 56
   });
 
+  // In-progress polyline being drawn
+  const [inProgressPoints, setInProgressPoints] = useState<number[] | null>(null);
+  const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
+  const lastClickTimeRef = useRef<number>(0);
+
   useEffect(() => {
     const handleResize = () => {
       setDimensions({
@@ -78,6 +84,26 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  // ESC cancels in-progress line
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && inProgressPoints) {
+        setInProgressPoints(null);
+        setMousePos(null);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [inProgressPoints]);
+
+  // Cancel in-progress line when line mode is turned off
+  useEffect(() => {
+    if (!isAddingLine) {
+      setInProgressPoints(null);
+      setMousePos(null);
+    }
+  }, [isAddingLine]);
 
   const { width, height } = dimensions;
 
@@ -126,35 +152,69 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
     setPosition(newPos);
   };
 
+  const getWorldPos = useCallback((stage: Konva.Stage) => {
+    const pointer = stage.getPointerPosition();
+    if (!pointer) return null;
+    const transform = stage.getAbsoluteTransform().copy().invert();
+    return transform.point(pointer);
+  }, []);
+
   const handleStageClick = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
     if (isAddingPin && onCreatePin) {
       const stage = e.target.getStage();
       if (!stage) return;
-      
-      const pointer = stage.getPointerPosition();
-      if (!pointer) return;
-
-      const transform = stage.getAbsoluteTransform().copy().invert();
-      const pos = transform.point(pointer);
-      
+      const pos = getWorldPos(stage);
+      if (!pos) return;
       onCreatePin(pos.x, pos.y);
-    } else if (isAddingLine && onCreateLine) {
+    } else if (isAddingLine) {
       const stage = e.target.getStage();
       if (!stage) return;
-      
-      const pointer = stage.getPointerPosition();
-      if (!pointer) return;
+      const pos = getWorldPos(stage);
+      if (!pos) return;
 
-      const transform = stage.getAbsoluteTransform().copy().invert();
-      const pos = transform.point(pointer);
-      
-      onCreateLine(pos.x, pos.y);
+      const now = Date.now();
+      const isDoubleClick = now - lastClickTimeRef.current < 350;
+      lastClickTimeRef.current = now;
+
+      if (isDoubleClick && inProgressPoints && inProgressPoints.length >= 4) {
+        // Double-click: finish the line (drop the last point added by the first click of the double-click)
+        const finalPoints = inProgressPoints.slice(0, -2);
+        if (finalPoints.length >= 4 && onCreateLine) {
+          onCreateLine(finalPoints);
+        }
+        setInProgressPoints(null);
+        setMousePos(null);
+        return;
+      }
+
+      if (!inProgressPoints) {
+        // First click: start a new in-progress line
+        setInProgressPoints([pos.x, pos.y]);
+      } else {
+        // Subsequent clicks: snap to dominant direction (same logic as preview)
+        const lastX = inProgressPoints[inProgressPoints.length - 2];
+        const lastY = inProgressPoints[inProgressPoints.length - 1];
+        const dx = Math.abs(pos.x - lastX);
+        const dy = Math.abs(pos.y - lastY);
+        // Snap: if moving more horizontally → keep Y, if more vertically → keep X
+        const snappedX = dx >= dy ? pos.x : lastX;
+        const snappedY = dx >= dy ? lastY : pos.y;
+        setInProgressPoints(prev => prev ? [...prev, snappedX, snappedY] : [snappedX, snappedY]);
+      }
     } else {
       // Deselect if clicking on empty space (Stage, Grid)
       onSelectPin(null);
       onSelectImage(null);
       if (onSelectLine) onSelectLine(null);
     }
+  };
+
+  const handleStageMouseMove = (e: Konva.KonvaEventObject<MouseEvent>) => {
+    if (!isAddingLine || !inProgressPoints) return;
+    const stage = e.target.getStage();
+    if (!stage) return;
+    const pos = getWorldPos(stage);
+    if (pos) setMousePos(pos);
   };
 
   // Alignment Guides
@@ -357,45 +417,194 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
         }}
         onClick={handleStageClick}
         onTap={handleStageClick}
+        onMouseMove={handleStageMouseMove}
         ref={ref}
       >
         <Layer className="grid-layer" listening={false}>
           {gridLines}
         </Layer>
         <Layer name="content-layer">
-          {images.map(img => (
-            <KonvaImage
-              key={img.id}
-              image={img.element}
-              width={img.width}
-              height={img.height}
-              rotation={img.rotation}
-              draggable={!isAddingPin}
-              onClick={(e) => {
-                e.cancelBubble = true;
-                onSelectImage(img.id);
-                onSelectPin(null);
-                if (onSelectLine) onSelectLine(null);
-              }}
-              onTap={(e) => {
-                e.cancelBubble = true;
-                onSelectImage(img.id);
-                onSelectPin(null);
-                if (onSelectLine) onSelectLine(null);
-              }}
-              onDragEnd={(e) => {
-                const node = e.target;
-                onUpdateImage({ ...img, x: node.x(), y: node.y() });
-              }}
-              stroke={selectedImageId === img.id ? '#3b82f6' : undefined}
-              strokeWidth={selectedImageId === img.id ? 2 / scale : 0}
-              // Set the origin to the center of the image
-              offsetX={img.width / 2}
-              offsetY={img.height / 2}
-              x={img.x} 
-              y={img.y}
-            />
-          ))}
+          {images.map(img => {
+            const isSelected = selectedImageId === img.id;
+            // Handle radius scaled inversely so it stays visually constant
+            const HR = 6 / scale;
+
+            // Corner & edge handle positions relative to image top-left (before offsetX/Y)
+            // Since offsetX = w/2, offsetY = h/2, the image top-left in local space is (-w/2, -h/2)
+            const w = img.width;
+            const h = img.height;
+
+            // 8 handles: 4 corners + 4 edges
+            type HandleDef = { id: string; lx: number; ly: number; cursor: string; anchor: 'tl'|'tr'|'bl'|'br'|'t'|'b'|'l'|'r' };
+            const handles: HandleDef[] = [
+              { id: 'tl', lx: -w/2, ly: -h/2, cursor: 'nwse-resize', anchor: 'tl' },
+              { id: 'tr', lx:  w/2, ly: -h/2, cursor: 'nesw-resize', anchor: 'tr' },
+              { id: 'bl', lx: -w/2, ly:  h/2, cursor: 'nesw-resize', anchor: 'bl' },
+              { id: 'br', lx:  w/2, ly:  h/2, cursor: 'nwse-resize', anchor: 'br' },
+              { id: 't',  lx:  0,   ly: -h/2, cursor: 'ns-resize',   anchor: 't'  },
+              { id: 'b',  lx:  0,   ly:  h/2, cursor: 'ns-resize',   anchor: 'b'  },
+              { id: 'l',  lx: -w/2, ly:  0,   cursor: 'ew-resize',   anchor: 'l'  },
+              { id: 'r',  lx:  w/2, ly:  0,   cursor: 'ew-resize',   anchor: 'r'  },
+            ];
+
+            return (
+              <Group key={img.id}>
+                <KonvaImage
+                  image={img.element}
+                  width={img.width}
+                  height={img.height}
+                  rotation={img.rotation}
+                  draggable={!isAddingPin && !isAddingLine}
+                  onClick={(e) => {
+                    e.cancelBubble = true;
+                    onSelectImage(img.id);
+                    onSelectPin(null);
+                    if (onSelectLine) onSelectLine(null);
+                  }}
+                  onTap={(e) => {
+                    e.cancelBubble = true;
+                    onSelectImage(img.id);
+                    onSelectPin(null);
+                    if (onSelectLine) onSelectLine(null);
+                  }}
+                  onDragMove={(e) => {
+                    const node = e.target;
+                    onUpdateImage({ ...img, x: node.x(), y: node.y() }, false);
+                  }}
+                  onDragEnd={(e) => {
+                    const node = e.target;
+                    onUpdateImage({ ...img, x: node.x(), y: node.y() }, true);
+                  }}
+                  stroke={isSelected ? '#3b82f6' : undefined}
+                  strokeWidth={isSelected ? 2 / scale : 0}
+                  // Set the origin to the center of the image
+                  offsetX={img.width / 2}
+                  offsetY={img.height / 2}
+                  x={img.x}
+                  y={img.y}
+                />
+                {isSelected && handles.map(handle => (
+                  <Circle
+                    key={`${img.id}-handle-${handle.id}`}
+                    // World position = image center + local offset
+                    x={img.x + handle.lx}
+                    y={img.y + handle.ly}
+                    radius={HR}
+                    fill="white"
+                    stroke="#3b82f6"
+                    strokeWidth={1.5 / scale}
+                    draggable
+                    onMouseEnter={(e) => {
+                      const stage = e.target.getStage();
+                      if (stage) stage.container().style.cursor = handle.cursor;
+                    }}
+                    onMouseLeave={(e) => {
+                      const stage = e.target.getStage();
+                      if (stage) stage.container().style.cursor = 'default';
+                    }}
+                    onDragMove={(e) => {
+                      e.cancelBubble = true;
+                      const node = e.target;
+                      const dragX = node.x();
+                      const dragY = node.y();
+                      const aspectRatio = img.width / img.height;
+
+                      // Current image center
+                      const cx = img.x;
+                      const cy = img.y;
+
+                      let newX = cx, newY = cy, newW = img.width, newH = img.height;
+
+                      if (handle.anchor === 'tl') {
+                        // Opposite corner is bottom-right: (cx + w/2, cy + h/2)
+                        const fixedX = cx + img.width / 2;
+                        const fixedY = cy + img.height / 2;
+                        const dw = fixedX - dragX;
+                        const dh = fixedY - dragY;
+                        newW = Math.max(10, Math.abs(dw) > Math.abs(dh * aspectRatio) ? dw : dh * aspectRatio);
+                        newH = newW / aspectRatio;
+                        newX = fixedX - newW / 2;
+                        newY = fixedY - newH / 2;
+                      } else if (handle.anchor === 'tr') {
+                        // Opposite corner is bottom-left: (cx - w/2, cy + h/2)
+                        const fixedX = cx - img.width / 2;
+                        const fixedY = cy + img.height / 2;
+                        const dw = dragX - fixedX;
+                        const dh = fixedY - dragY;
+                        newW = Math.max(10, Math.abs(dw) > Math.abs(dh * aspectRatio) ? dw : dh * aspectRatio);
+                        newH = newW / aspectRatio;
+                        newX = fixedX + newW / 2;
+                        newY = fixedY - newH / 2;
+                      } else if (handle.anchor === 'bl') {
+                        // Opposite corner is top-right: (cx + w/2, cy - h/2)
+                        const fixedX = cx + img.width / 2;
+                        const fixedY = cy - img.height / 2;
+                        const dw = fixedX - dragX;
+                        const dh = dragY - fixedY;
+                        newW = Math.max(10, Math.abs(dw) > Math.abs(dh * aspectRatio) ? dw : dh * aspectRatio);
+                        newH = newW / aspectRatio;
+                        newX = fixedX - newW / 2;
+                        newY = fixedY + newH / 2;
+                      } else if (handle.anchor === 'br') {
+                        // Opposite corner is top-left: (cx - w/2, cy - h/2)
+                        const fixedX = cx - img.width / 2;
+                        const fixedY = cy - img.height / 2;
+                        const dw = dragX - fixedX;
+                        const dh = dragY - fixedY;
+                        newW = Math.max(10, Math.abs(dw) > Math.abs(dh * aspectRatio) ? dw : dh * aspectRatio);
+                        newH = newW / aspectRatio;
+                        newX = fixedX + newW / 2;
+                        newY = fixedY + newH / 2;
+                      } else if (handle.anchor === 't') {
+                        const fixedY = cy + img.height / 2;
+                        newH = Math.max(10, fixedY - dragY);
+                        newW = newH * aspectRatio;
+                        newX = cx;
+                        newY = fixedY - newH / 2;
+                      } else if (handle.anchor === 'b') {
+                        const fixedY = cy - img.height / 2;
+                        newH = Math.max(10, dragY - fixedY);
+                        newW = newH * aspectRatio;
+                        newX = cx;
+                        newY = fixedY + newH / 2;
+                      } else if (handle.anchor === 'l') {
+                        const fixedX = cx + img.width / 2;
+                        newW = Math.max(10, fixedX - dragX);
+                        newH = newW / aspectRatio;
+                        newX = fixedX - newW / 2;
+                        newY = cy;
+                      } else if (handle.anchor === 'r') {
+                        const fixedX = cx - img.width / 2;
+                        newW = Math.max(10, dragX - fixedX);
+                        newH = newW / aspectRatio;
+                        newX = fixedX + newW / 2;
+                        newY = cy;
+                      }
+
+                      // Keep handle pinned to the calculated constrained bounds
+                      let newLx = 0;
+                      if (handle.anchor.includes('l')) newLx = -newW / 2;
+                      else if (handle.anchor.includes('r')) newLx = newW / 2;
+
+                      let newLy = 0;
+                      if (handle.anchor.includes('t')) newLy = -newH / 2;
+                      else if (handle.anchor.includes('b')) newLy = newH / 2;
+
+                      node.x(newX + newLx);
+                      node.y(newY + newLy);
+
+                      onUpdateImage({ ...img, x: newX, y: newY, width: newW, height: newH }, false);
+                    }}
+                    onDragEnd={(e) => {
+                      e.cancelBubble = true;
+                      // Commit final size to history
+                      onUpdateImage({ ...img }, true);
+                    }}
+                  />
+                ))}
+              </Group>
+            );
+          })}
           {pins.map((pin) => (
             <PinComponent
               key={pin.id}
@@ -462,6 +671,62 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
                 listening={false}
              />
           ))}
+          {/* In-progress polyline preview */}
+          {inProgressPoints && inProgressPoints.length >= 2 && mousePos && (() => {
+            // Confirmed segments (already clicked): render as Manhattan (L-shape)
+            const confirmedPts: number[] = [];
+            for (let i = 0; i < inProgressPoints.length - 2; i += 2) {
+              const seg = calculateManhattanPath(
+                inProgressPoints[i], inProgressPoints[i + 1],
+                inProgressPoints[i + 2], inProgressPoints[i + 3]
+              );
+              if (i === 0) confirmedPts.push(...seg);
+              else confirmedPts.push(...seg.slice(2));
+            }
+            // Current segment: snap to dominant direction (horizontal OR vertical, no diagonal)
+            const lastX = inProgressPoints[inProgressPoints.length - 2];
+            const lastY = inProgressPoints[inProgressPoints.length - 1];
+            const dx = Math.abs(mousePos.x - lastX);
+            const dy = Math.abs(mousePos.y - lastY);
+            const previewPts = dx >= dy
+              ? [lastX, lastY, mousePos.x, lastY]   // horizontal
+              : [lastX, lastY, lastX, mousePos.y];  // vertical
+
+            return (
+              <>
+                {confirmedPts.length >= 4 && (
+                  <Line
+                    points={confirmedPts}
+                    stroke="#1f2937"
+                    strokeWidth={2 / scale}
+                    lineCap="round"
+                    lineJoin="round"
+                    listening={false}
+                    opacity={0.7}
+                  />
+                )}
+                <Line
+                  points={previewPts}
+                  stroke="#1f2937"
+                  strokeWidth={2 / scale}
+                  lineCap="round"
+                  lineJoin="round"
+                  listening={false}
+                  opacity={0.4}
+                />
+              </>
+            );
+          })()}
+          {/* Start-point dot */}
+          {inProgressPoints && inProgressPoints.length >= 2 && (
+            <Line
+              points={[inProgressPoints[0], inProgressPoints[1], inProgressPoints[0], inProgressPoints[1]]}
+              stroke="#1f2937"
+              strokeWidth={8 / scale}
+              lineCap="round"
+              listening={false}
+            />
+          )}
         </Layer>
       </Stage>
       <div className='absolute bottom-2 right-2 pointer-events-none text-gray-500 text-xs bg-white/80 p-1 rounded shadow'>

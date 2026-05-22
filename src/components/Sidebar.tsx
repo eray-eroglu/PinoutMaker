@@ -110,15 +110,15 @@ export const Sidebar = ({
     }
   };
 
-  // --- Mesafe Ayarlama Mantığı ---
-  // Kullanıcıdan px cinsinden değer alıp, bunu pinin x/y koordinatlarına yansıtacağız.
-  // "Solundaki/Sağındaki" derken, en yakın pini veya hedef noktayı (anchor) baz alabiliriz.
-  // Şimdilik en basit haliyle: Seçili pinin X koordinatını manuel olarak px cinsinden kaydırma.
+  // --- Position Adjustment Logic ---
+  // We take a px value from the user and apply it to the pin's x/y coordinates.
+  // When referring to "left of" or "right of", we can base it on the nearest pin or anchor point.
+  // For now, the simplest approach: manually shift the selected pin's X coordinate by px.
 
   const handleMoveLeft = (px: number) => {
     if (selectedPin) {
-      // Sola kaydırmak için X değerini azaltıyoruz.
-      // labelDx/labelDy kullanıyorsak onları da güncellemeliyiz.
+      // Decrease X to move left.
+      // If we use labelDx/labelDy, update those too.
       const newX = selectedPin.x - px;
       const newDx = (newX - selectedPin.targetX) * scale;
       onUpdatePin({ ...selectedPin, x: newX, labelDx: newDx });
@@ -368,16 +368,6 @@ export const Sidebar = ({
               onChange={(e) => onUpdateLine({ ...selectedLine, thickness: Number(e.target.value) || 1 }, false)}
               onBlur={() => onPushHistory()}
             />
-          </div>
-          <div className='flex items-center gap-2'>
-            <input
-              type='checkbox'
-              id='angled-line-toggle'
-              className='rounded border-gray-300 text-blue-600 focus:ring-blue-500'
-              checked={selectedLine.isAngled || false}
-              onChange={(e) => onUpdateLine({ ...selectedLine, isAngled: e.target.checked }, true)}
-            />
-            <label htmlFor='angled-line-toggle' className='text-sm text-gray-600 cursor-pointer'>Angled Line</label>
           </div>
         </div>
       ) : selectedPin ? (

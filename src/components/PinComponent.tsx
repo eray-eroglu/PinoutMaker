@@ -93,7 +93,7 @@ export const PinComponent: React.FC<PinComponentProps> = ({
 
       const anchorPos = anchorNode.position();
 
-      // Noktaları ref üzerinden veriyoruz
+      // Set points via refs
       const x1 = centerX;
       const y1 = centerY;
       const x2 = anchorPos.x;
@@ -101,14 +101,14 @@ export const PinComponent: React.FC<PinComponentProps> = ({
 
       let points = calculateManhattanPath(x1, y1, x2, y2);
 
-      // PWM Dalga Efekti
+      // PWM Wave Effect
       if (pin.isPwm) {
         points = calculateWavePoints(points, scale);
       }
       
       lineRef.current.points(points);
       
-      // EKRANI ZORLA YENİLE (Titremeyi ve geri atmayı engeller)
+      // Force a layer redraw (prevents flickering and position drift)
       lineRef.current.getLayer()?.batchDraw(); 
     }
   }, [pin.isPwm, scale]); // Note: We read positions from refs directly (labelNode.x()) which is updated by Konva during drag.

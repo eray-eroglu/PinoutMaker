@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { Save, Upload, Plus, Trash2, RotateCw, FileDown, FolderOpen } from 'lucide-react';
+import { Save, Upload, Plus, Trash2, RotateCw, FileDown, FolderOpen, BookOpen } from 'lucide-react';
 
 interface TopBarProps {
   onImport: (file: File) => void;
@@ -14,6 +14,8 @@ interface TopBarProps {
   isAddingPin: boolean;
   onAddLine: () => void;
   isAddingLine: boolean;
+  onToggleLibrary: () => void;
+  isLibraryOpen: boolean;
 }
 
 export const TopBar = ({
@@ -28,7 +30,9 @@ export const TopBar = ({
   isImageLoaded,
   isAddingPin,
   onAddLine,
-  isAddingLine
+  isAddingLine,
+  onToggleLibrary,
+  isLibraryOpen,
 }: TopBarProps) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -107,6 +111,19 @@ export const TopBar = ({
         <FileDown size={16} /> Export PDF
         <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 delay-500 bg-gray-800 text-white text-xs rounded px-2 py-1 pointer-events-none z-50 whitespace-nowrap shadow-md">
           Export your board and pin table as a high-quality PDF
+        </div>
+      </button>
+
+      <button
+        onClick={onToggleLibrary}
+        className={`group relative flex items-center gap-2 px-3 py-1.5 border rounded text-sm cursor-pointer transition-colors ${isLibraryOpen
+          ? 'bg-indigo-100 border-indigo-300 text-indigo-700'
+          : 'bg-white border-gray-300 hover:bg-gray-50 text-gray-700'
+          }`}
+      >
+        <BookOpen size={16} /> {isLibraryOpen ? 'Boardoza Library ✕' : 'Boardoza Library'}
+        <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 delay-500 bg-gray-800 text-white text-xs rounded px-2 py-1 pointer-events-none z-50 whitespace-nowrap shadow-md">
+          Open/Close Boardoza Image Library
         </div>
       </button>
 

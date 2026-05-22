@@ -11,9 +11,9 @@ vi.mock('react-konva', () => {
     Stage: ({ children }: any) => <div data-testid="stage">{children}</div>,
     Layer: ({ children }: any) => <div data-testid="layer">{children}</div>,
     Line: (props: any) => (
-      <div 
-        data-testid="konva-line" 
-        data-is-guide={props.stroke === 'red'} 
+      <div
+        data-testid="konva-line"
+        data-is-guide={props.stroke === 'red'}
       />
     ),
     Rect: () => <div data-testid="konva-rect" />,

@@ -53,7 +53,7 @@ describe('calculateWavePoints', () => {
              wavePoints.push(ex, ey);
              continue;
           }
-           // Segment başlangıcı
+            // Segment start
             if (i === 0) wavePoints.push(sx, sy);
         */
         // If the first segment hits the "continue", it pushes sx,sy and ex,ey.

@@ -1,14 +1,16 @@
 import { useState, useRef, useEffect } from 'react';
+import jsPDF from 'jspdf';
+import Konva from 'konva';
 import { TopBar } from './components/TopBar';
 import { Sidebar } from './components/Sidebar';
 import { CanvasStage } from './components/CanvasStage';
+import { ProductLibrary } from './components/ProductLibrary';
+import type { Product } from './components/ProductLibrary';
 import type { PinData, LineData, ProjectData, LegendItem, BoardImage } from './types';
 
 export interface LoadedImage extends BoardImage {
   element: HTMLImageElement;
 }
-import jsPDF from 'jspdf';
-import Konva from 'konva';
 
 function App() {
   const [images, setImages] = useState<LoadedImage[]>([]);
@@ -22,6 +24,7 @@ function App() {
   const [fileHandle, setFileHandle] = useState<any>(null);
   const [gapSize, setGapSize] = useState<number>(12);
   const [anchorSize, setAnchorSize] = useState<number>(5);
+  const [isLibraryOpen, setIsLibraryOpen] = useState(false);
   
   const DEFAULT_LEGEND_ITEMS: LegendItem[] = [
     { id: '1', text: 'POWER', color: '#dc2626' },
@@ -116,6 +119,32 @@ function App() {
     reader.readAsDataURL(file);
   };
 
+  const handleImportProduct = (product: Product) => {
+    if (!product.image_url) return;
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.src = product.image_url;
+    img.onload = () => {
+      pushHistory();
+      const newImg: LoadedImage = {
+        id: crypto.randomUUID(),
+        src: product.image_url,
+        element: img,
+        x: 50,
+        y: 50,
+        width: img.width,
+        height: img.height,
+        rotation: 0,
+      };
+      setImages(prev => [...prev, newImg]);
+      setSelectedImageId(newImg.id);
+      setIsLibraryOpen(false);
+    };
+    img.onerror = () => {
+      alert(`Failed to load image for "${product.name}". Please check the image URL.`);
+    };
+  };
+
   const handleRotateImage = () => {
     pushHistory();
     setImages(prev => prev.map((img, idx) => {
@@ -169,14 +198,11 @@ function App() {
     setIsAddingPin(false);
   };
 
-  const createLineAt = (x: number, y: number) => {
+  const createLineAt = (points: number[]) => {
     const newLine: LineData = {
       id: crypto.randomUUID(),
-      x1: x,
-      y1: y,
-      x2: x + (100 / scale),
-      y2: y + (100 / scale),
-      color: '#3b82f6',
+      points,
+      color: '#1f2937',
       thickness: 2
     };
     pushHistory();
@@ -342,10 +368,7 @@ function App() {
           const newLine: LineData = {
             ...original,
             id: newId,
-            x1: original.x1 + 20,
-            y1: original.y1 + 20,
-            x2: original.x2 + 20,
-            y2: original.y2 + 20,
+            points: (original.points ?? []).map((v: number) => v + 20),
           };
 
           pushHistory();
@@ -534,7 +557,14 @@ function App() {
       }
 
       setPins(data.pins || []);
-      setLines(data.lines || []);
+      // Migrate legacy line format (x1/y1/x2/y2) to new points[] format
+      const migratedLines = (data.lines || []).map((l: any) => {
+        if (!l.points || l.points.length === 0) {
+          return { ...l, points: [l.x1 ?? 0, l.y1 ?? 0, l.x2 ?? 100, l.y2 ?? 100] };
+        }
+        return l;
+      });
+      setLines(migratedLines);
       setScale(data.scale || 1);
       setPosition(data.position || { x: 0, y: 0 });
       setGapSize(data.gapSize ?? 12);
@@ -553,12 +583,14 @@ function App() {
     
     const stage = stageRef.current;
     
-    // Save current scale/pos to restore later
+    // Save current scale/pos/size to restore later
     const oldScale = stage.scaleX();
     const oldPos = stage.position();
+    const oldWidth = stage.width();
+    const oldHeight = stage.height();
     
     // 1. Calculate Bounding Box of the "Virtual Scene"
-    //    We want to export everything (Image + Pins), regardless of current zoom/pan.
+    //    We want to export everything (Image + Pins + Lines), regardless of current zoom/pan.
     
     // Initialize with extreme values inverted
     let minX = Infinity;
@@ -616,15 +648,38 @@ function App() {
              // Wait, PinComponent uses x={currentLabelX} y={currentLabelY} for Label.
              // So x,y is top-left.
              
-             const labelL = p.x; 
-             const labelR = p.x + estimatedWidth; 
-             const labelT = p.y;
-             const labelB = p.y + estimatedHeight; 
+             const hasOffset = p.labelDx !== undefined && p.labelDy !== undefined;
+             const labelX = hasOffset ? p.targetX + (p.labelDx! / scale) : p.x;
+             const labelY = hasOffset ? p.targetY + (p.labelDy! / scale) : p.y;
+             
+             const labelL = labelX; 
+             const labelR = labelX + estimatedWidth; 
+             const labelT = labelY;
+             const labelB = labelY + estimatedHeight; 
 
              if (labelL < minX) minX = labelL;
              if (labelR > maxX) maxX = labelR;
              if (labelT < minY) minY = labelT;
              if (labelB > maxY) maxY = labelB;
+        });
+    }
+
+    // Consider Lines
+    if (lines && lines.length > 0) {
+        hasContent = true;
+        lines.forEach(l => {
+            if (l.points) {
+                for (let i = 0; i < l.points.length; i += 2) {
+                    const x = l.points[i];
+                    const y = l.points[i + 1];
+                    if (x !== undefined && y !== undefined) {
+                        if (x < minX) minX = x;
+                        if (x > maxX) maxX = x;
+                        if (y < minY) minY = y;
+                        if (y > maxY) maxY = y;
+                    }
+                }
+            }
         });
     }
 
@@ -665,14 +720,35 @@ function App() {
     const contentWidth = maxX - minX;
     const contentHeight = maxY - minY;
     
+    // Capped maximum export dimension to avoid browser canvas memory limits
+    const MAX_EXPORT_DIM = 2400;
+    let exportWidth = contentWidth;
+    let exportHeight = contentHeight;
+
+    if (contentWidth > contentHeight) {
+        if (contentWidth > MAX_EXPORT_DIM) {
+            exportWidth = MAX_EXPORT_DIM;
+            exportHeight = Math.round(MAX_EXPORT_DIM * (contentHeight / contentWidth));
+        }
+    } else {
+        if (contentHeight > MAX_EXPORT_DIM) {
+            exportHeight = MAX_EXPORT_DIM;
+            exportWidth = Math.round(MAX_EXPORT_DIM * (contentWidth / contentHeight));
+        }
+    }
+
+    const exportScale = exportWidth / contentWidth;
+    
     let bgRect: Konva.Rect | null = null;
     let gridLayer: Konva.Layer | undefined;
 
     try {
         // 2. Adjust Stage to fit content exactly into the viewport 
         
-        stage.scale({ x: 1, y: 1 });
-        stage.position({ x: -minX, y: -minY });
+        stage.scale({ x: exportScale, y: exportScale });
+        stage.position({ x: -minX * exportScale, y: -minY * exportScale });
+        stage.width(exportWidth);
+        stage.height(exportHeight);
         
         // Hide grid layer
         gridLayer = stage.findOne('.grid-layer') as Konva.Layer | undefined;
@@ -757,28 +833,28 @@ function App() {
         await new Promise(resolve => setTimeout(resolve, 100));
 
         const dataUrl = stage.toDataURL({
-            pixelRatio: 2, 
+            pixelRatio: 1.5, 
             x: 0,
             y: 0,
-            width: contentWidth,
-            height: contentHeight,
+            width: exportWidth,
+            height: exportHeight,
             mimeType: 'image/jpeg',
-            quality: 0.90
+            quality: 0.95
         });
 
         // 3. Generate PDF
-        const orientation = contentWidth > contentHeight ? 'l' : 'p';
+        const orientation = exportWidth > exportHeight ? 'l' : 'p';
         const pdf = new jsPDF(orientation, 'mm', 'a4');
         
         const pageWidth = pdf.internal.pageSize.getWidth();
         const pageHeight = pdf.internal.pageSize.getHeight();
         
-        const widthRatio = pageWidth / contentWidth;
-        const heightRatio = pageHeight / contentHeight;
+        const widthRatio = pageWidth / exportWidth;
+        const heightRatio = pageHeight / exportHeight;
         const scaleFactor = Math.min(widthRatio, heightRatio);
         
-        const printWidth = contentWidth * scaleFactor;
-        const printHeight = contentHeight * scaleFactor;
+        const printWidth = exportWidth * scaleFactor;
+        const printHeight = exportHeight * scaleFactor;
         
         const marginX = (pageWidth - printWidth) / 2;
         const marginY = (pageHeight - printHeight) / 2;
@@ -806,6 +882,8 @@ function App() {
         // 4. Restore Original View
         stage.scale({ x: oldScale, y: oldScale });
         stage.position(oldPos);
+        stage.width(oldWidth);
+        stage.height(oldHeight);
     }
   };
 
@@ -824,6 +902,13 @@ function App() {
         isImageLoaded={images.length > 0}
         isAddingPin={isAddingPin}
         isAddingLine={isAddingLine}
+        onToggleLibrary={() => setIsLibraryOpen(o => !o)}
+        isLibraryOpen={isLibraryOpen}
+      />
+      <ProductLibrary
+        isOpen={isLibraryOpen}
+        onClose={() => setIsLibraryOpen(false)}
+        onImportProduct={handleImportProduct}
       />
       <div className='flex flex-1 overflow-hidden'>
         <CanvasStage
