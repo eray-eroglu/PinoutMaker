@@ -26,3 +26,8 @@ openspec/
 
 # Build Output
 release/
+
+# Environment variables (API keys - never commit these!)
+.env
+.env.local
+.env.*.local
