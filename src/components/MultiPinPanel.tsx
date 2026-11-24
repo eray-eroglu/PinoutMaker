@@ -14,7 +14,8 @@ interface MultiPinPanelProps {
   onAlignTops: () => void;
   onDistribute: () => void;
   onApplyRowPitch: (pitch: number) => void;
-  onSetColor: (color: string) => void;
+  /** saveHistory is false for the live updates of a colour picker session after its first colour. */
+  onSetColor: (color: string, saveHistory: boolean) => void;
   onSetPwm: (isPwm: boolean) => void;
   onDelete: () => void;
   onCombineRows: () => void;

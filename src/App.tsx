@@ -34,6 +34,7 @@ import { LABEL_HEIGHT, layoutPinLabels } from './utils/pinLayout';
 import { measureLabelText } from './utils/labelMeasure';
 import { MultiPinPanel } from './components/MultiPinPanel';
 import { isEditableElement, topOverlay } from './utils/keyboard';
+import { deepEqual } from './utils/history';
 import type { Overlay } from './utils/keyboard';
 
 type HistoryState = { pins: PinData[]; lines: LineData[]; images: LoadedImage[]; labelScale: number | null };
@@ -785,9 +786,12 @@ function App() {
   // Separate pins count as one row when their labels are within half a label height
   const combineTolerance = (LABEL_HEIGHT * effectiveLabelScale) / 2;
 
-  const applyToSelectedPins = (transform: (pins: PinData[], ids: string[]) => PinData[]) => {
-    pushHistory();
-    setPins(transform(pins, selectedPinIds));
+  /** Applies a bulk edit; one that changes nothing (e.g. aligning aligned pins) records no undo step. */
+  const applyToSelectedPins = (transform: (pins: PinData[], ids: string[]) => PinData[], saveHistory = true) => {
+    const next = transform(pins, selectedPinIds);
+    if (deepEqual(next, pins)) return;
+    if (saveHistory) pushHistory();
+    setPins(next);
   };
 
   const combineSelectedRows = () => {
@@ -810,7 +814,7 @@ function App() {
       onAlignTops={() => applyToSelectedPins(alignLabelTops)}
       onDistribute={() => applyToSelectedPins((p, ids) => distributeVertically(p, ids, layoutOf))}
       onApplyRowPitch={pitch => applyToSelectedPins((p, ids) => applyRowPitch(p, ids, pitch, layoutOf))}
-      onSetColor={color => applyToSelectedPins((p, ids) => updatePins(p, ids, { color }))}
+      onSetColor={(color, saveHistory) => applyToSelectedPins((p, ids) => updatePins(p, ids, { color }), saveHistory)}
       onSetPwm={isPwm => applyToSelectedPins((p, ids) => updatePins(p, ids, { isPwm }))}
       onDelete={deleteSelected}
       onCombineRows={combineSelectedRows}
@@ -935,7 +939,6 @@ function App() {
           onUpdateLine={updateLine}
           selectedImage={selectedImage}
           onUpdateImage={updateImage}
-          onPushHistory={pushHistory}
           onExportPinoutTemplate={handleExportPinoutTemplate}
           gapSize={gapSize}
           onGapSizeChange={setGapSize}

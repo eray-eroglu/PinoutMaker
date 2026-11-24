@@ -12,6 +12,7 @@ import {
   renamePinFunction,
   updatePinFunction,
 } from '../utils/pinUtils';
+import { colorPickerSession, useEditSession } from '../hooks/useEditSession';
 
 /** Detail of the window 'focus-sidebar-input' event: which label's editor to focus. */
 export interface FocusSidebarInputDetail {
@@ -31,7 +32,6 @@ interface SidebarProps {
   onUpdateImage: (img: LoadedImage, saveHistory?: boolean) => void;
   selectedLine: LineData | null;
   onUpdateLine: (line: LineData, saveHistory?: boolean) => void;
-  onPushHistory: () => void;
   /** Downloads the pins/lines relative to the selected image as a Boardoza library pinout (JSON). */
   onExportPinoutTemplate: () => void;
   gapSize: number;
@@ -75,42 +75,50 @@ const COLORS = [
 /**
  * Palette swatches plus a custom color picker; the selected color gets a ring.
  * `value` null means no single colour (several pins with different colours): nothing is ringed.
+ * `saveHistory` is true for a swatch click and for the first colour of a picker session, so
+ * dragging through the picker is one undo step.
  */
-export const ColorPalette = ({ value, onChange }: { value: string | null; onChange: (color: string) => void }) => (
-  <div className='grid grid-cols-4 gap-2'>
-    {COLORS.map((c) => (
+export const ColorPalette = ({ value, onChange }: {
+  value: string | null;
+  onChange: (color: string, saveHistory: boolean) => void;
+}) => {
+  const pickerSession = useEditSession();
+  return (
+    <div className='grid grid-cols-4 gap-2'>
+      {COLORS.map((c) => (
+        <div
+          key={c}
+          className={`w-8 h-8 rounded cursor-pointer transition-transform hover:scale-110`}
+          style={{
+            backgroundColor: c,
+            boxShadow: value === c ? '0 0 0 2px white, 0 0 0 4px gray' : 'none',
+          }}
+          onClick={() => onChange(c, true)}
+        ></div>
+      ))}
       <div
-        key={c}
-        className={`w-8 h-8 rounded cursor-pointer transition-transform hover:scale-110`}
+        className={`w-8 h-8 rounded cursor-pointer transition-transform hover:scale-110 relative flex items-center justify-center overflow-hidden`}
         style={{
-          backgroundColor: c,
-          boxShadow: value === c ? '0 0 0 2px white, 0 0 0 4px gray' : 'none',
+          background: 'conic-gradient(red, yellow, lime, aqua, blue, magenta, red)',
+          boxShadow: value !== null && !COLORS.includes(value) ? '0 0 0 2px white, 0 0 0 4px gray' : 'none',
         }}
-        onClick={() => onChange(c)}
-      ></div>
-    ))}
-    <div
-      className={`w-8 h-8 rounded cursor-pointer transition-transform hover:scale-110 relative flex items-center justify-center overflow-hidden`}
-      style={{
-        background: 'conic-gradient(red, yellow, lime, aqua, blue, magenta, red)',
-        boxShadow: value !== null && !COLORS.includes(value) ? '0 0 0 2px white, 0 0 0 4px gray' : 'none',
-      }}
-      title="Custom Color"
-    >
-      <input
-        type="color"
-        value={value ?? '#000000'}
-        onChange={(e) => onChange(e.target.value)}
-        className="opacity-0 absolute inset-0 w-full h-full cursor-pointer"
-      />
+        title="Custom Color"
+      >
+        <input
+          type="color"
+          value={value ?? '#000000'}
+          {...colorPickerSession(pickerSession, onChange)}
+          className="opacity-0 absolute inset-0 w-full h-full cursor-pointer"
+        />
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 export const Sidebar = ({
   selectedPin, multiPinPanel, selectedFunctionIndex, onSelectFunctionIndex, onUpdatePin, selectedImage, onUpdateImage,
   selectedLine, onUpdateLine,
-  onPushHistory, onExportPinoutTemplate, gapSize, onGapSizeChange,
+  onExportPinoutTemplate, gapSize, onGapSizeChange,
   legendItems, onLegendItemsChange, isLegendVisible, onLegendVisibilityChange,
   legendMode, onLegendModeChange, legendShowCounts, onLegendShowCountsChange, anchorSize, onAnchorSizeChange,
   labelScale, onLabelScaleChange, selectedPinHeader, onOpenPinTable,
@@ -121,8 +129,11 @@ export const Sidebar = ({
   const [colorEditorFunctionId, setColorEditorFunctionId] = useState<string | null>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
   const functionInputRefs = useRef<Array<HTMLInputElement | null>>([]);
-  // "+ Add function" already recorded history; focusing the new input must not record it again
+  // "+ Add function" already recorded history; typing into the new input continues that step
   const skipFocusHistoryRef = useRef(false);
+  // Text fields: one undo step per focus, recorded on the first change (an untouched field records nothing)
+  const fieldSession = useEditSession();
+  const textColorSession = useEditSession();
 
   useEffect(() => {
     const handleFocus = (e: Event) => {
@@ -146,13 +157,13 @@ export const Sidebar = ({
         ...selectedPin,
         text: newText,
         color: getColorForRename(selectedPin, newText),
-      }, false);
+      }, fieldSession.next());
     }
   };
 
-  const handleColorChange = (color: string) => {
+  const handleColorChange = (color: string, saveHistory: boolean) => {
     if (selectedPin) {
-      onUpdatePin({ ...selectedPin, color });
+      onUpdatePin({ ...selectedPin, color }, saveHistory);
     }
   };
 
@@ -162,9 +173,9 @@ export const Sidebar = ({
     }
   };
 
-  const handleTextColorChange = (color: string) => {
+  const handleTextColorChange = (color: string, saveHistory: boolean) => {
     if (selectedPin) {
-      onUpdatePin({ ...selectedPin, textColor: color });
+      onUpdatePin({ ...selectedPin, textColor: color }, saveHistory);
     }
   };
 
@@ -187,7 +198,7 @@ export const Sidebar = ({
   const handleFunctionFocus = (index: number) => {
     onSelectFunctionIndex(index);
     // One undo step per editing session, like the pin name
-    if (!skipFocusHistoryRef.current) onPushHistory();
+    fieldSession.start(skipFocusHistoryRef.current);
   };
 
   const handleMoveFunction = (index: number, delta: -1 | 1) => {
@@ -405,10 +416,11 @@ export const Sidebar = ({
                       ...selectedImage,
                       width: newW,
                       height: newW * ratio
-                    }, false);
+                    }, fieldSession.next());
                   }
                 }}
-                onFocus={() => onPushHistory()}
+                onFocus={() => fieldSession.start()}
+                onBlur={fieldSession.end}
               />
             </div>
             <div>
@@ -427,10 +439,11 @@ export const Sidebar = ({
                       ...selectedImage,
                       height: newH,
                       width: newH * ratio
-                    }, false);
+                    }, fieldSession.next());
                   }
                 }}
-                onFocus={() => onPushHistory()}
+                onFocus={() => fieldSession.start()}
+                onBlur={fieldSession.end}
               />
             </div>
             <p className="text-xs text-gray-400">
@@ -490,8 +503,9 @@ export const Sidebar = ({
               min='1'
               className='w-full border border-gray-300 rounded px-2 py-1.5 text-sm outline-none focus:border-blue-500'
               value={selectedLine.thickness}
-              onChange={(e) => onUpdateLine({ ...selectedLine, thickness: Number(e.target.value) || 1 }, false)}
-              onFocus={() => onPushHistory()}
+              onChange={(e) => onUpdateLine({ ...selectedLine, thickness: Number(e.target.value) || 1 }, fieldSession.next())}
+              onFocus={() => fieldSession.start()}
+              onBlur={fieldSession.end}
             />
           </div>
         </div>
@@ -523,8 +537,9 @@ export const Sidebar = ({
               onChange={handleNameChange}
               onFocus={() => {
                 onSelectFunctionIndex(-1);
-                onPushHistory();
+                fieldSession.start();
               }}
+              onBlur={fieldSession.end}
             />
           </div>
 
@@ -547,7 +562,7 @@ export const Sidebar = ({
                 <input
                   type="color"
                   value={selectedPin.textColor || (isLightColor(selectedPin.color) ? '#000000' : '#ffffff')}
-                  onChange={(e) => handleTextColorChange(e.target.value)}
+                  {...colorPickerSession(textColorSession, handleTextColorChange)}
                   className="opacity-0 absolute inset-0 w-full h-full cursor-pointer z-10"
                 />
                 <div
@@ -596,8 +611,9 @@ export const Sidebar = ({
                       type="text"
                       value={fn.text}
                       placeholder="e.g. ADC0"
-                      onChange={(e) => onUpdatePin(renamePinFunction(selectedPin, index, e.target.value), false)}
+                      onChange={(e) => onUpdatePin(renamePinFunction(selectedPin, index, e.target.value), fieldSession.next())}
                       onFocus={() => handleFunctionFocus(index)}
+                      onBlur={fieldSession.end}
                       className="flex-1 min-w-0 border border-gray-300 rounded px-2 py-1 text-xs outline-none focus:border-blue-500"
                     />
                     <button
@@ -628,7 +644,7 @@ export const Sidebar = ({
                     <div className="py-2 pl-1">
                       <ColorPalette
                         value={fn.color}
-                        onChange={(color) => onUpdatePin(updatePinFunction(selectedPin, index, { color }))}
+                        onChange={(color, saveHistory) => onUpdatePin(updatePinFunction(selectedPin, index, { color }), saveHistory)}
                       />
                     </div>
                   )}
