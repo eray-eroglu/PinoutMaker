@@ -1,5 +1,6 @@
 import type { LegendItem, LineData, PinData } from '../types';
 import { DEFAULT_PIN_COLOR, scaleLabelsAroundAnchors } from './pinUtils';
+import { withFreshHeaderIds } from './header';
 
 /**
  * A ready-made pinout shipped with a library product (Supabase `products.pinout`).
@@ -181,8 +182,9 @@ export const importPinoutTemplate = (
   const templateWorldLabelScale = template.labelScale * Math.sqrt(fx * fy);
   const labelScale = projectLabelScale ?? templateWorldLabelScale;
 
+  // Fresh header ids too, so importing the same pinout twice gives two separate headers
   const pins = scaleLabelsAroundAnchors(
-    template.pins.map(p => withFreshIds(mapPin(p, map), newId)),
+    withFreshHeaderIds(template.pins.map(p => withFreshIds(mapPin(p, map), newId)), newId),
     labelScale / templateWorldLabelScale,
   );
   const lines = (template.lines ?? []).map(l => withFreshIds(mapLine(l, map), newId));

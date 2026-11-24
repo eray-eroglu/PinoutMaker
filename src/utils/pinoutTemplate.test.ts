@@ -22,6 +22,14 @@ const seqIds = () => {
 };
 
 describe('importPinoutTemplate', () => {
+  it('gives each imported header a fresh id shared by its pins', () => {
+    const headerPins = [pin({ id: 'a', headerId: 'h', headerIndex: 0 }), pin({ id: 'b', headerId: 'h', headerIndex: 1 })];
+    const r = importPinoutTemplate(template({ pins: headerPins }), placed(), null, seqIds());
+    expect(r.pins[0].headerId).not.toBe('h');
+    expect(r.pins[1].headerId).toBe(r.pins[0].headerId);
+    expect(r.pins.map(p => p.headerIndex)).toEqual([0, 1]);
+  });
+
   it('translates an unrotated, unscaled image to its centre', () => {
     const r = importPinoutTemplate(template(), placed({ x: 1000, y: 500 }), null);
     expect(r.pins[0]).toMatchObject({ x: 1120, y: 460, targetX: 1100, targetY: 450 });

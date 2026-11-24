@@ -12,6 +12,9 @@ import { computeResize, getHandlePosition } from '../utils/imageResize';
 import { layoutPinLabels } from '../utils/pinLayout';
 import { measureLabelText } from '../utils/labelMeasure';
 import type { ResizeAnchor } from '../utils/imageResize';
+import { HeaderPreview } from './HeaderPreview';
+import { constrainToAxis, headerPinPositions } from '../utils/header';
+import type { Point } from '../utils/header';
 
 interface CanvasStageProps {
   images: LoadedImage[];
@@ -34,6 +37,13 @@ interface CanvasStageProps {
   onCreateLine?: (points: number[]) => void;
   isAddingPin?: boolean;
   onCreatePin?: (x: number, y: number) => void;
+  /** Header tool: the user is picking the first and the last pad. */
+  isAddingHeader?: boolean;
+  /** Pins shown in the live preview while picking the last pad. */
+  headerCount?: number;
+  onPickHeader?: (start: Point, end: Point) => void;
+  /** Header waiting for its settings to be confirmed, with the pins Create would add. */
+  headerDraft?: { start: Point; end: Point; pins: PinData[] } | null;
   scale: number;
   setScale: (scale: number) => void;
   position: { x: number; y: number };
@@ -71,6 +81,10 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
   onCreateLine,
   isAddingPin = false,
   onCreatePin,
+  isAddingHeader = false,
+  headerCount = 10,
+  onPickHeader,
+  headerDraft = null,
   scale,
   setScale,
   position,
@@ -95,6 +109,10 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
   const [inProgressPoints, setInProgressPoints] = useState<number[] | null>(null);
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
   const lastClickTimeRef = useRef<number>(0);
+  // Header tool: first pad picked, and where the last pad would be (follows the mouse)
+  const [headerStart, setHeaderStart] = useState<Point | null>(null);
+  const [headerEnd, setHeaderEnd] = useState<Point | null>(null);
+  const isPlacing = isAddingPin || isAddingLine || isAddingHeader;
 
   useEffect(() => {
     const handleResize = () => {
@@ -127,6 +145,14 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
       setMousePos(null);
     }
   }, [isAddingLine]);
+
+  // Leaving header mode (Esc, another tool) drops a half-picked header
+  useEffect(() => {
+    if (!isAddingHeader) {
+      setHeaderStart(null);
+      setHeaderEnd(null);
+    }
+  }, [isAddingHeader]);
 
   const { width, height } = dimensions;
 
@@ -183,7 +209,21 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
   }, []);
 
   const handleStageClick = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
-    if (isAddingPin && onCreatePin) {
+    if (isAddingHeader) {
+      const stage = e.target.getStage();
+      const pos = stage && getWorldPos(stage);
+      if (!pos) return;
+      if (!headerStart) {
+        setHeaderStart(pos);
+        setHeaderEnd(pos);
+        return;
+      }
+      // Shift keeps the header exactly horizontal or vertical
+      const end = e.evt.shiftKey ? constrainToAxis(headerStart, pos) : pos;
+      setHeaderStart(null);
+      setHeaderEnd(null);
+      onPickHeader?.(headerStart, end);
+    } else if (isAddingPin && onCreatePin) {
       const stage = e.target.getStage();
       if (!stage) return;
       const pos = getWorldPos(stage);
@@ -233,6 +273,12 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
   };
 
   const handleStageMouseMove = (e: Konva.KonvaEventObject<MouseEvent>) => {
+    if (isAddingHeader && headerStart) {
+      const stage = e.target.getStage();
+      const pos = stage && getWorldPos(stage);
+      if (pos) setHeaderEnd(e.evt.shiftKey ? constrainToAxis(headerStart, pos) : pos);
+      return;
+    }
     if (!isAddingLine || !inProgressPoints) return;
     const stage = e.target.getStage();
     if (!stage) return;
@@ -391,12 +437,12 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
   return (
     <div 
       className='flex-1 bg-gray-50 relative overflow-hidden'
-      style={{ cursor: isAddingPin || isAddingLine ? 'crosshair' : 'default' }}
+      style={{ cursor: isPlacing ? 'crosshair' : 'default' }}
     >
       <Stage
         width={width}
         height={height}
-        draggable={!isAddingPin && !isAddingLine}
+        draggable={!isPlacing}
         onWheel={handleWheel}
         scaleX={scale}
         scaleY={scale}
@@ -433,7 +479,7 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
             ];
             const selectThisImage = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
               // In pin/line mode the click must reach the stage, which places the pin or line point
-              if (isAddingPin || isAddingLine) return;
+              if (isPlacing) return;
               e.cancelBubble = true;
               onSelectImage(img.id);
               onSelectPin(null);
@@ -447,7 +493,7 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
                   width={img.width}
                   height={img.height}
                   rotation={img.rotation}
-                  draggable={!isAddingPin && !isAddingLine}
+                  draggable={!isPlacing}
                   onClick={selectThisImage}
                   onTap={selectThisImage}
                   // History is recorded before the drag so undo returns to the original spot
@@ -622,6 +668,29 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
               </>
             );
           })()}
+          {headerStart && headerEnd && (
+            <HeaderPreview
+              start={headerStart}
+              end={headerEnd}
+              anchors={headerPinPositions(headerStart, headerEnd, headerCount)}
+              scale={scale}
+              labelScale={labelScale}
+              gapSize={gapSize}
+              anchorSize={anchorSize}
+            />
+          )}
+          {headerDraft && (
+            <HeaderPreview
+              start={headerDraft.start}
+              end={headerDraft.end}
+              anchors={headerDraft.pins.map(p => ({ x: p.targetX, y: p.targetY }))}
+              ghostPins={headerDraft.pins}
+              scale={scale}
+              labelScale={labelScale}
+              gapSize={gapSize}
+              anchorSize={anchorSize}
+            />
+          )}
           {/* Start-point dot */}
           {inProgressPoints && inProgressPoints.length >= 2 && (
             <Line

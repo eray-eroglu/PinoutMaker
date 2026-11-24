@@ -63,4 +63,18 @@ describe('TopBar', () => {
     const deleteBtn = screen.getByRole('button', { name: /Delete/i });
     expect(deleteBtn).not.toBeDisabled();
   });
+
+  it('toggles the header tool and enables the pin table only when headers exist', () => {
+    const onAddHeader = vi.fn();
+    const onOpenPinTable = vi.fn();
+    const { rerender } = render(<TopBar {...mockProps} onAddHeader={onAddHeader} onOpenPinTable={onOpenPinTable} hasHeaders={false} />);
+    fireEvent.click(screen.getByRole('button', { name: /Add Header/i }));
+    expect(onAddHeader).toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: /Pin table…/ })).toBeDisabled();
+
+    rerender(<TopBar {...mockProps} onAddHeader={onAddHeader} onOpenPinTable={onOpenPinTable} hasHeaders isAddingHeader />);
+    expect(screen.getByRole('button', { name: /Click first & last pad/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Pin table…/ }));
+    expect(onOpenPinTable).toHaveBeenCalled();
+  });
 });

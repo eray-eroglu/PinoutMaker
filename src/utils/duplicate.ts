@@ -1,11 +1,16 @@
 import type { LineData, PinData } from '../types';
 import { clonePin } from './pinUtils';
+import { withoutHeader } from './header';
 
 /** World offset applied by paste and duplicate so the copy is visible next to the original. */
 export const COPY_OFFSET = 20;
 
-/** Copy of a pin moved by `offset`, with fresh ids for the pin and its function labels. */
-export const duplicatePin = (pin: PinData, offset = COPY_OFFSET): PinData => clonePin(pin, offset, offset);
+/**
+ * Copy of a pin moved by `offset`, with fresh ids for the pin and its function labels. The copy
+ * leaves the original's header: two pins with the same header index would make a pin table
+ * fill the header in an ambiguous order.
+ */
+export const duplicatePin = (pin: PinData, offset = COPY_OFFSET): PinData => withoutHeader(clonePin(pin, offset, offset));
 
 export const duplicateLine = (line: LineData, offset = COPY_OFFSET): LineData => ({
   ...line,

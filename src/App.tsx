@@ -22,6 +22,11 @@ import { ShortcutsHelp } from './components/ShortcutsHelp';
 import { centreOn, fitToContent, getContentBounds, zoomAroundCentre, ZOOM_FACTOR } from './utils/viewport';
 import { ARROW_DELTAS, nudgeImage, nudgeLine, nudgePin } from './utils/nudge';
 import { duplicateLine, duplicatePin } from './utils/duplicate';
+import { HeaderPanel } from './components/HeaderPanel';
+import { PinTableDialog } from './components/PinTableDialog';
+import { DEFAULT_HEADER_SETTINGS, buildHeaderPins, getHeaders, imageCentreAt, resolveHeaderSide } from './utils/header';
+import type { HeaderSettings, Point } from './utils/header';
+import { applyPinTable } from './utils/pinTable';
 
 type HistoryState = { pins: PinData[]; lines: LineData[]; images: LoadedImage[]; labelScale: number | null };
 
@@ -42,6 +47,11 @@ function App() {
   const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
   const [isAddingPin, setIsAddingPin] = useState(false);
   const [isAddingLine, setIsAddingLine] = useState(false);
+  // Header tool: picking pads on the canvas, then a draft waiting for its settings
+  const [isAddingHeader, setIsAddingHeader] = useState(false);
+  const [headerDraft, setHeaderDraft] = useState<{ start: Point; end: Point } | null>(null);
+  const [headerSettings, setHeaderSettings] = useState<HeaderSettings>(DEFAULT_HEADER_SETTINGS);
+  const [isPinTableOpen, setIsPinTableOpen] = useState(false);
   const [fileHandle, setFileHandle] = useState<FileSystemFileHandle | null>(null);
   const [gapSize, setGapSize] = useState<number>(DEFAULT_GAP_SIZE);
   const [anchorSize, setAnchorSize] = useState<number>(DEFAULT_ANCHOR_SIZE);
@@ -235,9 +245,15 @@ function App() {
   };
 
   // --- Modes ---
+  const stopHeaderTool = () => {
+    setIsAddingHeader(false);
+    setHeaderDraft(null);
+  };
+
   const toggleAddPinMode = () => {
     setIsAddingPin(!isAddingPin);
     setIsAddingLine(false);
+    stopHeaderTool();
     setSelectedPinId(null);
     setSelectedLineId(null);
   };
@@ -245,8 +261,64 @@ function App() {
   const toggleAddLineMode = () => {
     setIsAddingLine(!isAddingLine);
     setIsAddingPin(false);
+    stopHeaderTool();
     setSelectedPinId(null);
     setSelectedLineId(null);
+  };
+
+  const toggleAddHeaderMode = () => {
+    setIsAddingHeader(!isAddingHeader && !headerDraft);
+    setHeaderDraft(null);
+    setIsAddingPin(false);
+    setIsAddingLine(false);
+    setSelectedPinId(null);
+    setSelectedLineId(null);
+  };
+
+  // --- Headers ---
+  /** Auto label side faces away from the image under the header, else from the content's centre. */
+  const headerSideFor = (start: Point, end: Point) => {
+    const mid = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
+    const bounds = contentBounds();
+    const centre = imageCentreAt(images, mid)
+      ?? (bounds ? { x: (bounds.minX + bounds.maxX) / 2, y: (bounds.minY + bounds.maxY) / 2 } : null);
+    return resolveHeaderSide('auto', start, end, centre);
+  };
+
+  const pickHeader = (start: Point, end: Point) => {
+    setIsAddingHeader(false);
+    setHeaderDraft({ start, end });
+  };
+
+  const buildDraftPins = (labelScaleForPins: number, newId?: () => string) =>
+    headerDraft
+      ? buildHeaderPins({
+        ...headerDraft,
+        settings: headerSettings,
+        side: headerSettings.side === 'auto' ? autoHeaderSide : headerSettings.side,
+        labelScale: labelScaleForPins,
+        newId,
+      })
+      : [];
+
+  const createHeader = () => {
+    if (!headerDraft) return;
+    const newPins = buildDraftPins(fixLabelScale());
+    pushHistory();
+    setPins(prev => [...prev, ...newPins]);
+    clearSelection();
+    setSelectedPinId(newPins[0].id);
+    setHeaderDraft(null);
+  };
+
+  const headers = getHeaders(pins);
+
+  const applyTable = (headerId: string, rows: string[][], reverse: boolean) => {
+    const header = headers.find(h => h.id === headerId);
+    if (!header) return;
+    pushHistory();
+    setPins(prev => applyPinTable(prev, header.pins, rows, reverse, { labelScale: effectiveLabelScale }));
+    setIsPinTableOpen(false);
   };
 
   // --- Pins & lines ---
@@ -515,6 +587,8 @@ function App() {
     clearSelection();
     setIsAddingPin(false);
     setIsAddingLine(false);
+    stopHeaderTool();
+    setIsPinTableOpen(false);
     copiedPinRef.current = null;
     copiedLineRef.current = null;
     setFileHandle(handle);
@@ -595,6 +669,11 @@ function App() {
       if (e.key === 'Escape' || e.key === '?') setIsHelpOpen(false);
       return;
     }
+    // The pin table dialog is modal: no editing shortcuts behind it
+    if (isPinTableOpen) {
+      if (e.key === 'Escape') setIsPinTableOpen(false);
+      return;
+    }
 
     if (e.key === 'Delete' || e.key === 'Backspace') {
       deleteSelected();
@@ -604,6 +683,7 @@ function App() {
       clearSelection();
       setIsAddingPin(false);
       setIsAddingLine(false);
+      stopHeaderTool();
     } else if (e.key === '?') {
       setIsHelpOpen(true);
     } else if (e.shiftKey && !mod && e.code === 'Digit1') {
@@ -644,6 +724,12 @@ function App() {
   const selectedPin = pins.find(p => p.id === selectedPinId) || null;
   const selectedLine = lines.find(l => l.id === selectedLineId) || null;
   const selectedImage = images.find(img => img.id === selectedImageId) || null;
+  const selectedHeader = selectedPin?.headerId ? headers.find(h => h.id === selectedPin.headerId) : undefined;
+  // What 'auto' means for the header being set up (needs contentBounds, defined above)
+  const autoHeaderSide = headerDraft ? headerSideFor(headerDraft.start, headerDraft.end) : 'right';
+  // Stable ids keep the ghost pins mounted while the settings change
+  let previewId = 0;
+  const draftPins = buildDraftPins(effectiveLabelScale, () => `header-preview-${previewId++}`);
 
   return (
     <div className='h-screen w-screen flex flex-col overflow-hidden bg-white'>
@@ -663,6 +749,10 @@ function App() {
         isAddingLine={isAddingLine}
         onToggleLibrary={() => setIsLibraryOpen(o => !o)}
         isLibraryOpen={isLibraryOpen}
+        onAddHeader={toggleAddHeaderMode}
+        isAddingHeader={isAddingHeader || !!headerDraft}
+        onOpenPinTable={() => setIsPinTableOpen(true)}
+        hasHeaders={headers.length > 0}
       />
       <ProductLibrary
         isOpen={isLibraryOpen}
@@ -670,6 +760,15 @@ function App() {
         onImportProduct={handleImportProduct}
       />
       {isHelpOpen && <ShortcutsHelp onClose={() => setIsHelpOpen(false)} />}
+      {isPinTableOpen && (
+        <PinTableDialog
+          headers={headers}
+          initialHeaderId={selectedPin?.headerId ?? null}
+          labelScale={effectiveLabelScale}
+          onApply={applyTable}
+          onClose={() => setIsPinTableOpen(false)}
+        />
+      )}
       <div className='flex flex-1 overflow-hidden'>
         <div className='relative flex flex-1 min-w-0'>
           {recoveredAutosave && (
@@ -677,6 +776,15 @@ function App() {
               savedAt={recoveredAutosave.savedAt}
               onRestore={handleRestoreAutosave}
               onDiscard={handleDiscardAutosave}
+            />
+          )}
+          {headerDraft && (
+            <HeaderPanel
+              settings={headerSettings}
+              onChange={setHeaderSettings}
+              resolvedSide={autoHeaderSide}
+              onCreate={createHeader}
+              onCancel={() => setHeaderDraft(null)}
             />
           )}
           <CanvasStage
@@ -699,6 +807,10 @@ function App() {
             onCreateLine={createLineAt}
             isAddingPin={isAddingPin}
             onCreatePin={createPinAt}
+            isAddingHeader={isAddingHeader}
+            headerCount={headerSettings.count}
+            onPickHeader={pickHeader}
+            headerDraft={headerDraft && { ...headerDraft, pins: draftPins }}
             scale={scale}
             setScale={setScale}
             position={position}
@@ -739,6 +851,10 @@ function App() {
           onAnchorSizeChange={setAnchorSize}
           labelScale={effectiveLabelScale}
           onLabelScaleChange={changeLabelScale}
+          selectedPinHeader={selectedHeader && selectedPin
+            ? { index: selectedHeader.pins.indexOf(selectedPin), count: selectedHeader.pins.length }
+            : null}
+          onOpenPinTable={() => setIsPinTableOpen(true)}
         />
       </div>
     </div>

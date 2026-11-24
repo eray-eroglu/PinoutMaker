@@ -109,4 +109,36 @@ describe('serializeProject', () => {
     expect(loaded.pins).toEqual(pins);
     expect(loaded.gapSize).toBe(8);
   });
+
+  it('round-trips header membership through save and load', () => {
+    const pins: PinData[] = [0, 1].map(i => ({
+      id: `p${i}`, x: 50, y: i * 30, targetX: 0, targetY: i * 30, text: `P${i + 1}`, color: '#0d9488', isPwm: false,
+      headerId: 'header-1', headerIndex: i,
+    }));
+    const json = JSON.stringify(serializeProject({
+      images: [], pins, lines: [], scale: 1, position: { x: 0, y: 0 }, gapSize: 12,
+      legendItems: [], isLegendVisible: true, anchorSize: 5, labelScale: 1, legendMode: 'all', legendShowCounts: false,
+    }));
+    expect(parseProject(json).pins).toEqual(pins);
+  });
+});
+
+describe('parseProject header fields', () => {
+  const load = (pin: Record<string, unknown>) =>
+    parseProject(JSON.stringify({
+      scale: 1, position: { x: 0, y: 0 }, labelScale: 1,
+      pins: [{ id: 'a', x: 0, y: 0, targetX: 0, targetY: 0, text: 'A', color: '#000', isPwm: false, ...pin }],
+    })).pins[0];
+
+  it('leaves older pins without header fields untouched', () => {
+    expect('headerId' in load({})).toBe(false);
+  });
+
+  it('drops incomplete or malformed header membership', () => {
+    for (const bad of [{ headerId: 'h' }, { headerIndex: 1 }, { headerId: 'h', headerIndex: -1 }, { headerId: 3, headerIndex: 0 }, { headerId: 'h', headerIndex: 1.5 }]) {
+      const pin = load(bad);
+      expect(pin.headerId).toBeUndefined();
+      expect(pin.headerIndex).toBeUndefined();
+    }
+  });
 });

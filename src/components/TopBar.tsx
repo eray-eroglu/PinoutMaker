@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { Save, Upload, Plus, Trash2, RotateCw, FolderOpen, BookOpen } from 'lucide-react';
+import { Save, Upload, Plus, Trash2, RotateCw, FolderOpen, BookOpen, GripVertical, ClipboardPaste } from 'lucide-react';
 import { ExportMenu } from './ExportMenu';
 import type { ExportOptions } from '../utils/export';
 
@@ -20,6 +20,12 @@ interface TopBarProps {
   isAddingLine: boolean;
   onToggleLibrary: () => void;
   isLibraryOpen: boolean;
+  /** Header tool: place a whole row of pins from its first and last pad. */
+  onAddHeader?: () => void;
+  isAddingHeader?: boolean;
+  /** Opens the pin table dialog; only useful once a header exists. */
+  onOpenPinTable?: () => void;
+  hasHeaders?: boolean;
 }
 
 export const TopBar = ({
@@ -38,6 +44,10 @@ export const TopBar = ({
   isAddingLine,
   onToggleLibrary,
   isLibraryOpen,
+  onAddHeader,
+  isAddingHeader = false,
+  onOpenPinTable,
+  hasHeaders = false,
 }: TopBarProps) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -151,6 +161,37 @@ export const TopBar = ({
           Add a new customizable pin to the board
         </div>
       </button>
+
+      {onAddHeader && (
+        <button
+          onClick={onAddHeader}
+          className={`group relative flex items-center gap-2 px-3 py-1.5 border rounded text-sm cursor-pointer transition-colors ${isAddingHeader
+            ? 'bg-blue-100 border-blue-300 text-blue-700'
+            : 'bg-white border-gray-300 hover:bg-gray-50 text-gray-700'
+            }`}
+        >
+          <GripVertical size={16} /> {isAddingHeader ? 'Click first & last pad' : 'Add Header'}
+          <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 delay-500 bg-gray-800 text-white text-xs rounded px-2 py-1 pointer-events-none z-50 whitespace-nowrap shadow-md">
+            Place a whole row of pins: click the first pad, then the last (Shift keeps it straight)
+          </div>
+        </button>
+      )}
+
+      {onOpenPinTable && (
+        <button
+          onClick={onOpenPinTable}
+          disabled={!hasHeaders}
+          className={`group relative flex items-center gap-2 px-3 py-1.5 border rounded text-sm transition-colors ${hasHeaders
+            ? 'bg-white border-gray-300 hover:bg-gray-50 text-gray-700 cursor-pointer'
+            : 'bg-gray-50 border-gray-200 text-gray-400 cursor-not-allowed'
+            }`}
+        >
+          <ClipboardPaste size={16} /> Pin table…
+          <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 delay-500 bg-gray-800 text-white text-xs rounded px-2 py-1 pointer-events-none z-50 whitespace-nowrap shadow-md">
+            {hasHeaders ? 'Fill a header from a table pasted from a datasheet, Excel or CSV' : 'Add a header first, then fill it from a pasted table'}
+          </div>
+        </button>
+      )}
       <div className={`group relative flex ml-auto`}>
         <button
           onClick={onDeletePin}
