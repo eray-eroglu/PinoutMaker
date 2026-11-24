@@ -12,6 +12,7 @@ import { computeResize, getHandlePosition } from '../utils/imageResize';
 import { layoutPinLabels } from '../utils/pinLayout';
 import { measureLabelText } from '../utils/labelMeasure';
 import type { ResizeAnchor } from '../utils/imageResize';
+import { pinsInMarquee, primaryOf, rectFromPoints } from '../utils/selection';
 
 interface CanvasStageProps {
   images: LoadedImage[];
@@ -19,12 +20,20 @@ interface CanvasStageProps {
   selectedImageId: string | null;
   onSelectImage: (id: string | null) => void;
   pins: PinData[];
-  selectedPinId: string | null;
-  /** Index into the selected pin's functions of the label the user picked; -1 = primary label. */
+  /** Selected pins; the last one is the primary (last clicked) pin. */
+  selectedPinIds: string[];
+  /** Index into the primary pin's functions of the label the user picked; -1 = primary label. */
   selectedFunctionIndex: number;
-  /** functionIndex: which label of the pin was clicked (-1 = primary label or anchor). */
-  onSelectPin: (id: string | null, functionIndex?: number) => void;
+  /**
+   * functionIndex: which label of the pin was clicked (-1 = primary label or anchor).
+   * toggle: Shift/Ctrl/Cmd+click, adds the pin to or removes it from the selection.
+   */
+  onSelectPin: (id: string | null, functionIndex?: number, toggle?: boolean) => void;
+  /** Marquee: adds these pins to the selection. */
+  onAddPinsToSelection: (ids: string[]) => void;
   onUpdatePin: (pin: PinData, saveHistory?: boolean) => void;
+  /** Moves several pins' labels (and anchors with withAnchor) by one offset, as one undo step. */
+  onMovePins: (ids: string[], dx: number, dy: number, withAnchor: boolean) => void;
   onDoubleClickPin: (id: string, functionIndex: number) => void;
   lines: LineData[];
   selectedLineId: string | null;
@@ -58,10 +67,12 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
   selectedImageId,
   onSelectImage,
   pins,
-  selectedPinId,
+  selectedPinIds,
   selectedFunctionIndex,
   onSelectPin,
+  onAddPinsToSelection,
   onUpdatePin,
+  onMovePins,
   onDoubleClickPin,
   lines,
   selectedLineId,
@@ -95,6 +106,31 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
   const [inProgressPoints, setInProgressPoints] = useState<number[] | null>(null);
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
   const lastClickTimeRef = useRef<number>(0);
+
+  // Shift+drag on empty canvas (or on a board image) draws a selection marquee instead of
+  // panning, so while Shift is held the stage and images are not draggable.
+  const [isShiftHeld, setIsShiftHeld] = useState(false);
+  const [marquee, setMarquee] = useState<{ start: { x: number; y: number }; end: { x: number; y: number } } | null>(null);
+  // While a selected pin is dragged, the other selected pins follow it by this offset
+  const [groupDrag, setGroupDrag] = useState<{ id: string; dx: number; dy: number; withAnchor: boolean } | null>(null);
+
+  useEffect(() => {
+    const update = (e: KeyboardEvent) => setIsShiftHeld(e.shiftKey);
+    // A key released while the window is in the background never sends keyup
+    const reset = () => setIsShiftHeld(false);
+    window.addEventListener('keydown', update);
+    window.addEventListener('keyup', update);
+    window.addEventListener('blur', reset);
+    return () => {
+      window.removeEventListener('keydown', update);
+      window.removeEventListener('keyup', update);
+      window.removeEventListener('blur', reset);
+    };
+  }, []);
+
+  const layoutOf = (pin: PinData) => layoutPinLabels(pin, labelScale, gapSize, measureLabelText);
+  const selectedPinSet = new Set(selectedPinIds);
+  const primaryPinId = primaryOf(selectedPinIds);
 
   useEffect(() => {
     const handleResize = () => {
@@ -225,6 +261,8 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
         setInProgressPoints(prev => prev ? [...prev, snappedX, snappedY] : [snappedX, snappedY]);
       }
     } else {
+      // Shift+click / the end of a Shift+drag marquee keeps the selection
+      if (e.evt.shiftKey) return;
       // Deselect if clicking on empty space (Stage, Grid)
       onSelectPin(null);
       onSelectImage(null);
@@ -232,7 +270,45 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
     }
   };
 
+  // The marquee is mirrored in a ref: the window pointerup listener must see the latest corner
+  const marqueeRef = useRef(marquee);
+  const updateMarquee = (next: typeof marquee) => {
+    marqueeRef.current = next;
+    setMarquee(next);
+  };
+
+  const handleStageMouseDown = (e: Konva.KonvaEventObject<MouseEvent>) => {
+    if (!e.evt.shiftKey || e.evt.button !== 0 || isAddingPin || isAddingLine) return;
+    const stage = e.target.getStage();
+    // Only on empty canvas or a board image; Shift on a pin or line still toggles / drags it
+    if (!stage || (e.target !== stage && e.target.getClassName() !== 'Image')) return;
+    const pos = getWorldPos(stage);
+    if (!pos) return;
+    updateMarquee({ start: pos, end: pos });
+
+    // The button may be released outside the canvas, so listen on the window. Pins and the
+    // selection don't change during the drag, so this render's values are current at release.
+    const finish = () => {
+      const current = marqueeRef.current;
+      if (!current) return;
+      updateMarquee(null);
+      const rect = rectFromPoints(current.start, current.end);
+      // A Shift+click without dragging selects nothing
+      if (Math.max(rect.width, rect.height) * scale < 3) return;
+      const hits = pinsInMarquee(pins, rect, layoutOf);
+      if (hits.length > 0) onAddPinsToSelection(hits);
+    };
+    window.addEventListener('pointerup', finish, { once: true });
+  };
+
   const handleStageMouseMove = (e: Konva.KonvaEventObject<MouseEvent>) => {
+    const current = marqueeRef.current;
+    if (current) {
+      const stage = e.target.getStage();
+      const pos = stage && getWorldPos(stage);
+      if (pos) updateMarquee({ ...current, end: pos });
+      return;
+    }
     if (!isAddingLine || !inProgressPoints) return;
     const stage = e.target.getStage();
     if (!stage) return;
@@ -242,6 +318,9 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
 
   // Alignment Guides
   const [guides, setGuides] = useState<{ vertical: number[], horizontal: number[], gaps: Array<{x: number, y: number, width: number, height: number}> }>({ vertical: [], horizontal: [], gaps: [] });
+
+  // Pins moving together with the dragged one: the whole selection when it is part of it
+  const movingPinIds = (id: string) => (selectedPinSet.has(id) ? selectedPinIds : [id]);
 
   const handlePinDragMove = (id: string, x: number, y: number, isCtrlPressed: boolean) => {
     // If Ctrl is pressed, disable snapping completely
@@ -270,9 +349,10 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
 
     const currentPin = pins.find(p => p.id === id);
     if (!currentPin) return { x, y };
+    // Pins moving along keep their offset to this one, so snapping to them means nothing
+    const moving = new Set(movingPinIds(id));
 
     // All geometry comes from the shared row layout (primary label first, then functions)
-    const layoutOf = (pin: PinData) => layoutPinLabels(pin, labelScale, gapSize, measureLabelText);
     const current = layoutOf({ ...currentPin, x, y });
     const currentPrimary = current.labels[0];
     const isLeftSide = current.side === 'left';
@@ -282,7 +362,7 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
     const labelHeight = currentPrimary.height;
 
     pins.forEach(otherPin => {
-        if (otherPin.id === id) return;
+        if (moving.has(otherPin.id)) return;
 
         const other = layoutOf(otherPin);
         const otherPrimary = other.labels[0];
@@ -351,6 +431,22 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
     return { x: snappedX, y: snappedY };
   };
 
+  /** Snapping applies to the dragged pin; the rest of the selection follows with the same offset. */
+  const handleGroupDragMove = (id: string, x: number, y: number, isCtrlPressed: boolean, withAnchor = false) => {
+    const snapped = handlePinDragMove(id, x, y, isCtrlPressed);
+    const pin = pins.find(p => p.id === id);
+    if (pin && movingPinIds(id).length > 1) {
+      setGroupDrag({ id, dx: snapped.x - pin.x, dy: snapped.y - pin.y, withAnchor });
+    }
+    return snapped;
+  };
+
+  const handleRowDragEnd = (id: string, dx: number, dy: number, withAnchor: boolean) => {
+    setGroupDrag(null);
+    if (dx === 0 && dy === 0) return;
+    onMovePins(movingPinIds(id), dx, dy, withAnchor);
+  };
+
   const handlePinDragEnd = () => {
       setGuides((prev) => {
           if (prev.vertical.length === 0 && prev.horizontal.length === 0 && prev.gaps.length === 0) {
@@ -396,7 +492,7 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
       <Stage
         width={width}
         height={height}
-        draggable={!isAddingPin && !isAddingLine}
+        draggable={!isAddingPin && !isAddingLine && !isShiftHeld}
         onWheel={handleWheel}
         scaleX={scale}
         scaleY={scale}
@@ -410,6 +506,7 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
         }}
         onClick={handleStageClick}
         onTap={handleStageClick}
+        onMouseDown={handleStageMouseDown}
         onMouseMove={handleStageMouseMove}
         ref={ref}
       >
@@ -432,8 +529,9 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
               { anchor: 'r', cursor: 'ew-resize' },
             ];
             const selectThisImage = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
-              // In pin/line mode the click must reach the stage, which places the pin or line point
-              if (isAddingPin || isAddingLine) return;
+              // In pin/line mode the click must reach the stage, which places the pin or line point.
+              // Shift is the marquee modifier: a Shift+click (or the end of a marquee) never selects the image.
+              if (isAddingPin || isAddingLine || e.evt.shiftKey) return;
               e.cancelBubble = true;
               onSelectImage(img.id);
               onSelectPin(null);
@@ -447,7 +545,7 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
                   width={img.width}
                   height={img.height}
                   rotation={img.rotation}
-                  draggable={!isAddingPin && !isAddingLine}
+                  draggable={!isAddingPin && !isAddingLine && !isShiftHeld}
                   onClick={selectThisImage}
                   onTap={selectThisImage}
                   // History is recorded before the drag so undo returns to the original spot
@@ -513,17 +611,20 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
               pin={pin}
               labelScale={labelScale}
               gapSize={gapSize}
-              isSelected={pin.id === selectedPinId}
-              selectedFunctionIndex={selectedFunctionIndex}
-              onSelect={(id, functionIndex) => {
-                onSelectPin(id, functionIndex);
+              isSelected={selectedPinSet.has(pin.id)}
+              // The picked label only matters for the single-pin editor
+              selectedFunctionIndex={selectedPinIds.length === 1 && pin.id === primaryPinId ? selectedFunctionIndex : null}
+              followOffset={groupDrag && groupDrag.id !== pin.id && selectedPinSet.has(pin.id) ? groupDrag : null}
+              onSelect={(id, functionIndex, e) => {
+                onSelectPin(id, functionIndex, e.evt.shiftKey || e.evt.ctrlKey || e.evt.metaKey);
                 onSelectImage(null);
                 if (onSelectLine) onSelectLine(null);
               }}
               onUpdate={onUpdatePin}
               onDoubleClick={onDoubleClickPin}
-              onDragMove={(id, x, y, isCtrlPressed) => handlePinDragMove(id, x, y, isCtrlPressed)}
+              onDragMove={handleGroupDragMove}
               onDragEnd={handlePinDragEnd}
+              onRowDragEnd={handleRowDragEnd}
               anchorSize={anchorSize}
             />
           ))}
@@ -576,6 +677,23 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
                 listening={false}
              />
           ))}
+          {/* Selection marquee (screen-constant dashed outline) */}
+          {marquee && (() => {
+            const r = rectFromPoints(marquee.start, marquee.end);
+            return (
+              <Rect
+                x={r.x}
+                y={r.y}
+                width={r.width}
+                height={r.height}
+                fill="rgba(59, 130, 246, 0.08)"
+                stroke="#2563eb"
+                strokeWidth={1 / scale}
+                dash={[4 / scale, 4 / scale]}
+                listening={false}
+              />
+            );
+          })()}
           {/* In-progress polyline preview */}
           {inProgressPoints && inProgressPoints.length >= 2 && mousePos && (() => {
             // Confirmed segments (already clicked): render as Manhattan (L-shape)

@@ -19,8 +19,14 @@ import { useAutosave } from './hooks/useAutosave';
 import { RestoreBanner } from './components/RestoreBanner';
 import { ShortcutsHelp } from './components/ShortcutsHelp';
 import { centreOn, fitToContent, getContentBounds, zoomAroundCentre, ZOOM_FACTOR } from './utils/viewport';
-import { ARROW_DELTAS, nudgeImage, nudgeLine, nudgePin } from './utils/nudge';
-import { duplicateLine, duplicatePin } from './utils/duplicate';
+import { ARROW_DELTAS, nudgeImage, nudgeLine } from './utils/nudge';
+import { duplicateLine, duplicatePins } from './utils/duplicate';
+import { addToSelection, existingIds, movePins, pickPins, primaryOf, removePins, toggleInSelection } from './utils/selection';
+import { alignLabelEdgesToAnchor, alignLabelTops, applyRowPitch, averageRowPitch, distributeVertically, updatePins } from './utils/align';
+import { combineIntoRows, planCombineRows } from './utils/combineRows';
+import { LABEL_HEIGHT, layoutPinLabels } from './utils/pinLayout';
+import { measureLabelText } from './utils/labelMeasure';
+import { MultiPinPanel } from './components/MultiPinPanel';
 
 type HistoryState = { pins: PinData[]; lines: LineData[]; images: LoadedImage[]; labelScale: number | null };
 
@@ -36,8 +42,10 @@ function App() {
   const [images, setImages] = useState<LoadedImage[]>([]);
   const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
   const [pins, setPins] = useState<PinData[]>([]);
-  const [selectedPinId, setSelectedPinId] = useState<string | null>(null);
-  // Which label of the selected pin the user picked on the canvas (-1 = primary label),
+  // Selected pins in click order; the last one is the primary pin (single-pin editor).
+  // Use selectedPinIds below, which drops pins that undo or delete removed.
+  const [rawSelectedPinIds, setSelectedPinIds] = useState<string[]>([]);
+  // Which label of the primary pin the user picked on the canvas (-1 = primary label),
   // so the sidebar can highlight and focus that function's editor.
   const [selectedFunctionIndex, setSelectedFunctionIndex] = useState(-1);
   const [lines, setLines] = useState<LineData[]>([]);
@@ -93,8 +101,11 @@ function App() {
     autosaveChecked && !recoveredAutosave && !isLoadingProject,
   );
 
+  const selectedPinIds = existingIds(rawSelectedPinIds, pins);
+  const selectedPinId = primaryOf(selectedPinIds);
+
   const stageRef = useRef<Konva.Stage>(null);
-  const copiedPinRef = useRef<PinData | null>(null); // For Ctrl+C/V
+  const copiedPinsRef = useRef<PinData[] | null>(null); // For Ctrl+C/V
   const copiedLineRef = useRef<LineData | null>(null); // For Ctrl+C/V
 
   // --- Undo / Redo ---
@@ -141,7 +152,7 @@ function App() {
   };
 
   const clearSelection = () => {
-    setSelectedPinId(null);
+    setSelectedPinIds([]);
     setSelectedFunctionIndex(-1);
     setSelectedLineId(null);
     setSelectedImageId(null);
@@ -240,14 +251,14 @@ function App() {
   const toggleAddPinMode = () => {
     setIsAddingPin(!isAddingPin);
     setIsAddingLine(false);
-    setSelectedPinId(null);
+    setSelectedPinIds([]);
     setSelectedLineId(null);
   };
 
   const toggleAddLineMode = () => {
     setIsAddingLine(!isAddingLine);
     setIsAddingPin(false);
-    setSelectedPinId(null);
+    setSelectedPinIds([]);
     setSelectedLineId(null);
   };
 
@@ -268,7 +279,7 @@ function App() {
     pushHistory();
     setPins(prev => [...prev, newPin]);
     clearSelection();
-    setSelectedPinId(newPin.id);
+    setSelectedPinIds([newPin.id]);
     setIsAddingPin(false);
   };
 
@@ -306,11 +317,17 @@ function App() {
     setLines(prev => prev.map(line => (line.id === updatedLine.id ? updatedLine : line)));
   };
 
+  /** Moves several pins as one undo step (group drag). */
+  const movePinGroup = (ids: string[], dx: number, dy: number, withAnchor: boolean) => {
+    pushHistory();
+    setPins(prev => movePins(prev, ids, dx, dy, withAnchor));
+  };
+
   const deleteSelected = () => {
-    if (selectedPinId) {
+    if (selectedPinIds.length > 0) {
       pushHistory();
-      setPins(prev => prev.filter(pin => pin.id !== selectedPinId));
-      setSelectedPinId(null);
+      setPins(prev => removePins(prev, selectedPinIds));
+      setSelectedPinIds([]);
     } else if (selectedLineId) {
       pushHistory();
       setLines(prev => prev.filter(line => line.id !== selectedLineId));
@@ -322,9 +339,17 @@ function App() {
     }
   };
 
-  const selectPin = (id: string | null, functionIndex = -1) => {
-    setSelectedPinId(id);
-    setSelectedFunctionIndex(functionIndex);
+  /** Click selects only that pin; toggle (Shift/Ctrl/Cmd+click) adds it to or removes it from the selection. */
+  const selectPin = (id: string | null, functionIndex = -1, toggle = false) => {
+    if (id && toggle) {
+      const next = toggleInSelection(selectedPinIds, id);
+      setSelectedPinIds(next);
+      // The picked label belongs to the clicked pin, which is only the primary if it was added
+      setSelectedFunctionIndex(primaryOf(next) === id ? functionIndex : -1);
+    } else {
+      setSelectedPinIds(id ? [id] : []);
+      setSelectedFunctionIndex(functionIndex);
+    }
     if (id) {
       setSelectedLineId(null);
       setSelectedImageId(null);
@@ -334,40 +359,58 @@ function App() {
   const selectLine = (id: string | null) => {
     setSelectedLineId(id);
     if (id) {
-      setSelectedPinId(null);
+      setSelectedPinIds([]);
       setSelectedImageId(null);
     }
   };
 
   const handlePinDoubleClick = (id: string, functionIndex: number) => {
     clearSelection();
-    setSelectedPinId(id);
+    setSelectedPinIds([id]);
     setSelectedFunctionIndex(functionIndex);
     // Focus the editor of the double-clicked label (pin name or function) in the sidebar
     window.dispatchEvent(new CustomEvent<FocusSidebarInputDetail>('focus-sidebar-input', { detail: { functionIndex } }));
   };
 
+  /** Adds pins to the selection (marquee), clearing any line or image selection. */
+  const addPinsToSelection = (ids: string[]) => {
+    setSelectedPinIds(addToSelection(selectedPinIds, ids));
+    setSelectedFunctionIndex(-1);
+    setSelectedLineId(null);
+    setSelectedImageId(null);
+  };
+
+  const selectAllPins = () => {
+    clearSelection();
+    setSelectedPinIds(pins.map(p => p.id));
+  };
+
+  /** Adds copies of pins and selects them (paste/duplicate). The copies keep their relative layout. */
+  const addPinCopies = (copies: PinData[]) => {
+    pushHistory();
+    setPins(prev => [...prev, ...copies]);
+    clearSelection();
+    setSelectedPinIds(copies.map(p => p.id));
+  };
+
   const copySelection = () => {
-    const pin = pins.find(p => p.id === selectedPinId);
+    const selectedPins = pickPins(pins, selectedPinIds);
     const line = lines.find(l => l.id === selectedLineId);
-    if (pin) {
-      copiedPinRef.current = { ...pin };
+    if (selectedPins.length > 0) {
+      copiedPinsRef.current = selectedPins.map(p => ({ ...p }));
       copiedLineRef.current = null;
     } else if (line) {
       copiedLineRef.current = { ...line };
-      copiedPinRef.current = null;
+      copiedPinsRef.current = null;
     }
   };
 
   const pasteClipboard = () => {
     // Each paste is offset 20 units from the previous one, so repeated pastes chain.
-    if (copiedPinRef.current) {
-      const newPin = duplicatePin(copiedPinRef.current);
-      pushHistory();
-      setPins(prev => [...prev, newPin]);
-      clearSelection();
-      setSelectedPinId(newPin.id);
-      copiedPinRef.current = newPin;
+    if (copiedPinsRef.current) {
+      const copies = duplicatePins(copiedPinsRef.current);
+      addPinCopies(copies);
+      copiedPinsRef.current = copies;
     } else if (copiedLineRef.current) {
       const newLine = duplicateLine(copiedLineRef.current);
       pushHistory();
@@ -380,14 +423,10 @@ function App() {
 
   /** Duplicates the selection in place (paste offset) without touching the clipboard. */
   const duplicateSelection = () => {
-    const pin = pins.find(p => p.id === selectedPinId);
+    const selectedPins = pickPins(pins, selectedPinIds);
     const line = lines.find(l => l.id === selectedLineId);
-    if (pin) {
-      const copy = duplicatePin(pin);
-      pushHistory();
-      setPins(prev => [...prev, copy]);
-      clearSelection();
-      setSelectedPinId(copy.id);
+    if (selectedPins.length > 0) {
+      addPinCopies(duplicatePins(selectedPins));
     } else if (line) {
       const copy = duplicateLine(line);
       pushHistory();
@@ -427,13 +466,13 @@ function App() {
     const step = e.shiftKey ? 10 : 1;
     const dx = ux * step;
     const dy = uy * step;
-    const pin = pins.find(p => p.id === selectedPinId);
+    const hasPins = selectedPinIds.length > 0;
     const line = lines.find(l => l.id === selectedLineId);
     const image = images.find(i => i.id === selectedImageId);
-    if (!pin && !line && !image) return; // nothing selected: let the page scroll as usual
+    if (!hasPins && !line && !image) return; // nothing selected: let the page scroll as usual
     e.preventDefault();
     if (!e.repeat) pushHistory();
-    if (pin) updatePin(nudgePin(pin, dx, dy, e.altKey), false);
+    if (hasPins) setPins(prev => movePins(prev, selectedPinIds, dx, dy, e.altKey));
     else if (line) updateLine(nudgeLine(line, dx, dy), false);
     else if (image) updateImage(nudgeImage(image, dx, dy), false);
   };
@@ -517,7 +556,7 @@ function App() {
     clearSelection();
     setIsAddingPin(false);
     setIsAddingLine(false);
-    copiedPinRef.current = null;
+    copiedPinsRef.current = null;
     copiedLineRef.current = null;
     setFileHandle(handle);
 
@@ -619,6 +658,9 @@ function App() {
     } else if (mod && (e.key === '-' || e.code === 'NumpadSubtract')) {
       e.preventDefault();
       zoomBy(1 / ZOOM_FACTOR);
+    } else if (mod && key === 'a') {
+      e.preventDefault();
+      selectAllPins();
     } else if (mod && key === 'd') {
       e.preventDefault();
       duplicateSelection();
@@ -643,7 +685,44 @@ function App() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
-  const selectedPin = pins.find(p => p.id === selectedPinId) || null;
+  // --- Bulk actions on a multi-pin selection (each is exactly one undo step) ---
+  const layoutOf = (pin: PinData) => layoutPinLabels(pin, effectiveLabelScale, gapSize, measureLabelText);
+  // Separate pins count as one row when their labels are within half a label height
+  const combineTolerance = (LABEL_HEIGHT * effectiveLabelScale) / 2;
+
+  const applyToSelectedPins = (transform: (pins: PinData[], ids: string[]) => PinData[]) => {
+    pushHistory();
+    setPins(transform(pins, selectedPinIds));
+  };
+
+  const combineSelectedRows = () => {
+    const result = combineIntoRows(pins, selectedPinIds, layoutOf, combineTolerance);
+    if (result.combinedRows === 0) return;
+    pushHistory();
+    setPins(result.pins);
+    setSelectedPinIds(result.selectedIds);
+    setSelectedFunctionIndex(-1);
+  };
+
+  const multiPinPanel = selectedPinIds.length >= 2 ? (
+    <MultiPinPanel
+      // A new selection starts with its own measured row pitch in the spacing field
+      key={selectedPinIds.join(',')}
+      pins={pickPins(pins, selectedPinIds)}
+      rowPitch={averageRowPitch(pins, selectedPinIds, layoutOf)}
+      combinableRows={planCombineRows(pins, selectedPinIds, layoutOf, combineTolerance).filter(row => row.length > 1).length}
+      onAlignEdges={() => applyToSelectedPins((p, ids) => alignLabelEdgesToAnchor(p, ids, layoutOf))}
+      onAlignTops={() => applyToSelectedPins(alignLabelTops)}
+      onDistribute={() => applyToSelectedPins((p, ids) => distributeVertically(p, ids, layoutOf))}
+      onApplyRowPitch={pitch => applyToSelectedPins((p, ids) => applyRowPitch(p, ids, pitch, layoutOf))}
+      onSetColor={color => applyToSelectedPins((p, ids) => updatePins(p, ids, { color }))}
+      onSetPwm={isPwm => applyToSelectedPins((p, ids) => updatePins(p, ids, { isPwm }))}
+      onDelete={deleteSelected}
+      onCombineRows={combineSelectedRows}
+    />
+  ) : null;
+
+  const selectedPin = selectedPinIds.length === 1 ? pins.find(p => p.id === selectedPinId) ?? null : null;
   const selectedLine = lines.find(l => l.id === selectedLineId) || null;
   const selectedImage = images.find(img => img.id === selectedImageId) || null;
 
@@ -687,10 +766,12 @@ function App() {
             selectedImageId={selectedImageId}
             onSelectImage={setSelectedImageId}
             pins={pins}
-            selectedPinId={selectedPinId}
+            selectedPinIds={selectedPinIds}
             selectedFunctionIndex={selectedFunctionIndex}
             onSelectPin={selectPin}
+            onAddPinsToSelection={addPinsToSelection}
             onUpdatePin={updatePin}
+            onMovePins={movePinGroup}
             onDoubleClickPin={handlePinDoubleClick}
             lines={lines}
             selectedLineId={selectedLineId}
@@ -717,6 +798,7 @@ function App() {
         </div>
         <Sidebar
           selectedPin={selectedPin}
+          multiPinPanel={multiPinPanel}
           selectedFunctionIndex={selectedFunctionIndex}
           onSelectFunctionIndex={setSelectedFunctionIndex}
           onUpdatePin={updatePin}

@@ -14,6 +14,11 @@ label and color them, draw connection lines, and export the result as a PDF.
   you pick one by hand.
 - **Alignment** – labels snap to each other's edges and to a configurable gap while dragging
   (hold <kbd>Ctrl</kbd> to disable).
+- **Multi-select** – select several pins (<kbd>Shift</kbd>/<kbd>Ctrl</kbd>+click, <kbd>Shift</kbd>+drag,
+  <kbd>Ctrl</kbd>+<kbd>A</kbd>) to move, nudge, copy, duplicate or delete them together. The sidebar then
+  aligns label edges to the anchors, aligns tops, distributes rows or sets their spacing, sets the colour
+  or PWM of all, and can **combine into one row**: in older projects where every function was a separate
+  pin, the labels of each row become one pin with function labels.
 - **Lines** – orthogonal polylines: click to add corners, double-click to finish, <kbd>Esc</kbd> to cancel.
 - **Legend table** – editable color legend, shown on the canvas and in the PDF.
 - **Projects** – save/load as JSON (uses the File System Access API where available, so
@@ -25,12 +30,16 @@ label and color them, draw connection lines, and export the result as a PDF.
 | Keys | Action |
 | --- | --- |
 | <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Y</kbd> (or <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd>) | Undo / redo |
-| <kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>Ctrl</kbd>+<kbd>V</kbd> | Copy / paste pin or line (repeated pastes are offset) |
+| <kbd>Shift</kbd>+click / <kbd>Ctrl</kbd>+click | Add a pin to / remove it from the selection |
+| <kbd>Shift</kbd>+drag on empty canvas or the board | Selection rectangle: adds pins whose anchor or label row it touches |
+| <kbd>Ctrl</kbd>+<kbd>A</kbd> | Select all pins |
+| Drag a selected label | Moves the labels of all selected pins (<kbd>Alt</kbd>+drag: whole pins, anchors too) |
+| <kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>Ctrl</kbd>+<kbd>V</kbd> | Copy / paste selected pins (keeping their layout) or line (repeated pastes are offset) |
 | <kbd>Del</kbd> / <kbd>Backspace</kbd> | Delete selection |
 | <kbd>Ctrl</kbd>+<kbd>S</kbd> | Save |
 | <kbd>←</kbd> <kbd>↑</kbd> <kbd>→</kbd> <kbd>↓</kbd> | Nudge selected pin label, line or image by 1 px (<kbd>Shift</kbd>: 10 px); one undo step per key hold |
 | <kbd>Alt</kbd>+arrows | Move the whole pin (label and anchor) |
-| <kbd>Ctrl</kbd>+<kbd>D</kbd> | Duplicate selected pin or line (does not touch the clipboard) |
+| <kbd>Ctrl</kbd>+<kbd>D</kbd> | Duplicate selected pins or line (does not touch the clipboard) |
 | <kbd>Shift</kbd>+<kbd>1</kbd> | Fit all content to the screen (also the button next to the scale indicator) |
 | <kbd>Ctrl</kbd>+<kbd>0</kbd> | Reset zoom to 100%, centred on the content |
 | <kbd>Ctrl</kbd>+<kbd>=</kbd> / <kbd>Ctrl</kbd>+<kbd>-</kbd> | Zoom in / out around the canvas centre |

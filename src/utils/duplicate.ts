@@ -12,3 +12,7 @@ export const duplicateLine = (line: LineData, offset = COPY_OFFSET): LineData =>
   id: crypto.randomUUID(),
   points: line.points.map(v => v + offset),
 });
+
+/** Copies of several pins, all moved by the same offset so their relative layout is kept. */
+export const duplicatePins = (pins: readonly PinData[], offset = COPY_OFFSET): PinData[] =>
+  pins.map(pin => duplicatePin(pin, offset));
