@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { ClipboardPaste, TriangleAlert } from 'lucide-react';
 import type { HeaderGroup } from '../utils/header';
 import { describeHeader } from '../utils/header';
-import { applyEntryToPin, assignRowsToHeader, parsePinTable } from '../utils/pinTable';
+import { applyEntryToPin, assignRowsToHeader, parsePinTable, pinTableWarnings } from '../utils/pinTable';
 import { isLightColor } from '../utils/colorUtils';
 
 interface PinTableDialogProps {
@@ -45,8 +45,7 @@ export const PinTableDialog = ({ headers, initialHeaderId, labelScale, onApply, 
     }));
   }, [header, rows, reverse, labelScale]);
 
-  const pinCount = header?.pins.length ?? 0;
-  const mismatch = rows.length > 0 && header && rows.length !== pinCount;
+  const warnings = header ? pinTableWarnings(header.pins, rows.length, reverse) : [];
   const canApply = !!header && rows.length > 0;
 
   return (
@@ -104,12 +103,12 @@ export const PinTableDialog = ({ headers, initialHeaderId, labelScale, onApply, 
               Reverse order <span className='text-xs text-gray-400'>(first row goes to the last pin)</span>
             </label>
 
-            {mismatch && (
+            {warnings.length > 0 && (
               <div role='alert' className='flex items-start gap-2 rounded border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-800'>
                 <TriangleAlert size={14} className='shrink-0 mt-0.5' />
-                {rows.length > pinCount
-                  ? `The table has ${rows.length} rows but the header has ${pinCount} pins; the last ${rows.length - pinCount} rows are ignored.`
-                  : `The table has ${rows.length} rows but the header has ${pinCount} pins; ${pinCount - rows.length} pins stay unchanged.`}
+                <div>
+                  {warnings.map(w => <p key={w}>{w}</p>)}
+                </div>
               </div>
             )}
 
@@ -126,7 +125,8 @@ export const PinTableDialog = ({ headers, initialHeaderId, labelScale, onApply, 
                   <tbody>
                     {preview.map(({ pin, result }, i) => (
                       <tr key={pin.id} className='border-t border-gray-100'>
-                        <td className='px-2 py-1 text-gray-400 tabular-nums'>{i + 1}</td>
+                        {/* The pad number, which stays put when other pins of the header are removed */}
+                        <td className='px-2 py-1 text-gray-400 tabular-nums'>{(pin.headerIndex ?? i) + 1}</td>
                         <td className='px-2 py-1 text-gray-500 truncate max-w-[5rem]'>{pin.text || '—'}</td>
                         <td className='px-2 py-1'>
                           {result ? (

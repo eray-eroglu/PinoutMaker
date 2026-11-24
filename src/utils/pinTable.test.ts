@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { applyEntryToPin, applyPinTable, assignRowsToHeader, detectDelimiter, parsePinTable, rowToEntry } from './pinTable';
+import { applyEntryToPin, applyPinTable, assignRowsToHeader, detectDelimiter, parsePinTable, pinTableWarnings, rowToEntry } from './pinTable';
 import { DEFAULT_PIN_COLOR } from './pinUtils';
 import type { PinData } from '../types';
 
@@ -66,6 +66,52 @@ describe('assignRowsToHeader', () => {
   it('reverse fills from the last pin and ignores extra rows', () => {
     const a = assignRowsToHeader(pins, [['A'], ['B'], ['C'], ['D']], true);
     expect(a.map(x => x.entry?.name)).toEqual(['C', 'B', 'A']);
+  });
+
+  // Pad 3 (headerIndex 2) was deleted: the remaining pins keep their pad numbers
+  const withGap = [0, 1, 3, 4, 5].map(i => headerPin(i));
+  const sixRows = ['R1', 'R2', 'R3', 'R4', 'R5', 'R6'].map(n => [n]);
+
+  it('matches rows by pad (headerIndex), not by position, after a pin was removed', () => {
+    const a = assignRowsToHeader(withGap, sixRows, false);
+    expect(a.map(x => `${x.pin.headerIndex}:${x.entry?.name}`)).toEqual(['0:R1', '1:R2', '3:R4', '4:R5', '5:R6']);
+  });
+
+  it('reverse counts from the highest pad', () => {
+    const a = assignRowsToHeader(withGap, sixRows, true);
+    expect(a.map(x => `${x.pin.headerIndex}:${x.entry?.name}`)).toEqual(['0:R6', '1:R5', '3:R3', '4:R2', '5:R1']);
+  });
+});
+
+describe('pinTableWarnings', () => {
+  const pins = (...indices: number[]) => indices.map(i => headerPin(i));
+
+  it('has nothing to say when rows and pads match', () => {
+    expect(pinTableWarnings(pins(0, 1, 2), 3, false)).toEqual([]);
+    expect(pinTableWarnings(pins(0, 1, 2), 0, false)).toEqual([]);
+  });
+
+  it('names the removed pad and the row that is ignored because of it', () => {
+    expect(pinTableWarnings(pins(0, 1, 3, 4, 5), 6, false)).toEqual(['Pad 3 has no pin (removed from the header); row 3 is ignored.']);
+    // Reverse: pad 3 of 6 takes row 4
+    expect(pinTableWarnings(pins(0, 1, 3, 4, 5), 6, true)).toEqual(['Pad 3 has no pin (removed from the header); row 4 is ignored.']);
+  });
+
+  it('lists several removed pads as ranges', () => {
+    expect(pinTableWarnings(pins(0, 3, 4, 6), 7, false)).toEqual(['Pads 2–3, 6 have no pin (removed from the header); rows 2–3, 6 are ignored.']);
+  });
+
+  it('reports extra rows by number and pins left unchanged', () => {
+    expect(pinTableWarnings(pins(0, 1, 2), 5, false)).toEqual(['The table has 5 rows but the header has 3 pads; rows 4–5 are ignored.']);
+    expect(pinTableWarnings(pins(0, 1, 2), 4, false)).toEqual(['The table has 4 rows but the header has 3 pads; row 4 is ignored.']);
+    expect(pinTableWarnings(pins(0, 1, 2), 1, false)).toEqual(['The table has 1 row for 3 pins; 2 pins stay unchanged.']);
+  });
+
+  it('a short table with a removed pad: the row of that pad is ignored only if the table has it', () => {
+    expect(pinTableWarnings(pins(0, 1, 3), 2, false)).toEqual([
+      'Pad 3 has no pin (removed from the header).',
+      'The table has 2 rows for 3 pins; 1 pin stays unchanged.',
+    ]);
   });
 });
 

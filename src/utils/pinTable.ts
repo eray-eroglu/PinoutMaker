@@ -136,16 +136,82 @@ export interface PinTableAssignment {
   entry: PinTableEntry | null;
 }
 
+/** Pad position of a header pin (0-based). A pin's place in the header comes from headerIndex. */
+const padIndex = (pin: PinData, fallback: number) => pin.headerIndex ?? fallback;
+
+/** Number of pads of the header: one past its highest headerIndex (removed pins leave gaps). */
+const padCount = (headerPins: PinData[]) =>
+  headerPins.reduce((max, pin, i) => Math.max(max, padIndex(pin, i) + 1), 0);
+
+/** Which table row (0-based) belongs to pad `index`; `reverse` fills from the last pad. */
+const rowForPad = (index: number, pads: number, reverse: boolean) => (reverse ? pads - 1 - index : index);
+
 /**
- * Pairs table rows with a header's pins (already sorted by headerIndex). `reverse` fills the header
- * from its last pin, for datasheets that list a connector bottom-to-top. Rows beyond the pin count
- * are ignored.
+ * Pairs table rows with a header's pins by pad position (headerIndex), so row i always lands on
+ * pad i even when pins were removed from the header. `reverse` fills the header from its last
+ * pad, for datasheets that list a connector bottom-to-top. Rows of removed pads and rows beyond
+ * the pad count are ignored.
  */
-export const assignRowsToHeader = (headerPins: PinData[], rows: string[][], reverse: boolean): PinTableAssignment[] =>
-  headerPins.map((pin, i) => {
-    const row = rows[reverse ? headerPins.length - 1 - i : i];
+export const assignRowsToHeader = (headerPins: PinData[], rows: string[][], reverse: boolean): PinTableAssignment[] => {
+  const pads = padCount(headerPins);
+  return headerPins.map((pin, i) => {
+    const row = rows[rowForPad(padIndex(pin, i), pads, reverse)];
     return { pin, entry: row ? rowToEntry(row) : null };
   });
+};
+
+/** Whole numbers from..to, inclusive. */
+const range = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => from + i);
+
+/** 1, 2, 3, 5 -> "1–3, 5" */
+const formatRanges = (numbers: number[]) => {
+  const parts: string[] = [];
+  for (let i = 0; i < numbers.length; i++) {
+    let j = i;
+    while (j + 1 < numbers.length && numbers[j + 1] === numbers[j] + 1) j++;
+    parts.push(j > i ? `${numbers[i]}–${numbers[j]}` : String(numbers[i]));
+    i = j;
+  }
+  return parts.join(', ');
+};
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+/** 1-based row numbers -> "row 3 is ignored" / "rows 3–4 are ignored" */
+const rowsIgnored = (rows: number[]) =>
+  `${rows.length === 1 ? 'row' : 'rows'} ${formatRanges(rows)} ${rows.length === 1 ? 'is' : 'are'} ignored`;
+
+/**
+ * Explains, for the dialog, where the table and the header don't line up: pads without a pin
+ * (and the rows that are ignored because of them), extra rows, and pins left unchanged.
+ * Numbers shown to the user are 1-based.
+ */
+export const pinTableWarnings = (headerPins: PinData[], rowCount: number, reverse: boolean): string[] => {
+  if (rowCount === 0 || headerPins.length === 0) return [];
+  const pads = padCount(headerPins);
+  const present = new Set(headerPins.map(padIndex));
+  const warnings: string[] = [];
+
+  const missingPads: number[] = [];
+  for (let pad = 0; pad < pads; pad++) if (!present.has(pad)) missingPads.push(pad);
+  if (missingPads.length > 0) {
+    const skippedRows = missingPads
+      .map(pad => rowForPad(pad, pads, reverse))
+      .filter(row => row < rowCount)
+      .sort((a, b) => a - b);
+    const padText = missingPads.length === 1 ? `Pad ${missingPads[0] + 1} has` : `Pads ${formatRanges(missingPads.map(p => p + 1))} have`;
+    const rowText = skippedRows.length > 0 ? `; ${rowsIgnored(skippedRows.map(r => r + 1))}` : '';
+    warnings.push(`${padText} no pin (removed from the header)${rowText}.`);
+  }
+  if (rowCount > pads) {
+    warnings.push(`The table has ${plural(rowCount, 'row')} but the header has ${plural(pads, 'pad')}; ${rowsIgnored(range(pads + 1, rowCount))}.`);
+  }
+  const unchanged = headerPins.filter((pin, i) => rowForPad(padIndex(pin, i), pads, reverse) >= rowCount).length;
+  if (unchanged > 0) {
+    warnings.push(`The table has ${plural(rowCount, 'row')} for ${plural(headerPins.length, 'pin')}; ${plural(unchanged, 'pin')} ${unchanged === 1 ? 'stays' : 'stay'} unchanged.`);
+  }
+  return warnings;
+};
 
 export interface ApplyPinTableOptions {
   /** World size of one label unit, to keep left-side labels attached to their anchor edge. */
