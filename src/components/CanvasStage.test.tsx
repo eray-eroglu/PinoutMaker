@@ -22,6 +22,10 @@ vi.mock('react-konva', () => {
     ),
     Rect: () => <div data-testid="konva-rect" />,
     Image: () => <div data-testid="konva-image" />,
+    Text: () => <div data-testid="konva-text" />,
+    Group: ({ children, listening }: { children?: ReactNode; listening?: boolean }) => (
+      <div data-testid="konva-group" data-listening={String(listening ?? true)}>{children}</div>
+    ),
   };
 });
 
@@ -252,6 +256,24 @@ describe('CanvasStage - Drag Snapping (Magnets)', () => {
       rerender(<CanvasStage {...defaultProps} pins={threePins} selectedPinIds={['pin-3']} />);
       expect(pinProps.get('pin-3')!.selectedFunctionIndex).toBe(-1);
       expect(pinProps.get('pin-1')!.selectedFunctionIndex).toBeNull();
+    });
+  });
+
+  describe('placing tools', () => {
+    const pinLayer = (container: HTMLElement) =>
+      container.querySelector('[data-testid="pin-pin-1"]')!.closest('[data-testid="konva-group"]') as HTMLElement;
+
+    it.each(['isAddingPin', 'isAddingLine', 'isAddingHeader'] as const)(
+      'lets clicks on pins and lines through to the stage while %s',
+      tool => {
+        const { container } = render(<CanvasStage {...defaultProps} {...{ [tool]: true }} />);
+        expect(pinLayer(container).dataset.listening).toBe('false');
+      },
+    );
+
+    it('pins and lines take clicks when no tool is active', () => {
+      const { container } = render(<CanvasStage {...defaultProps} />);
+      expect(pinLayer(container).dataset.listening).toBe('true');
     });
   });
 });

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import { ChevronDown, FileDown } from 'lucide-react';
 import type { ExportFormat, ExportOptions, PngScale } from '../utils/export';
 
@@ -6,6 +6,8 @@ interface ExportMenuProps {
   onExport: (options: ExportOptions) => void;
   /** Initial state of "Include legend" each time the menu opens (the canvas legend's visibility). */
   isLegendVisible: boolean;
+  /** Told when the dropdown opens or closes, so canvas shortcuts can stay out of the way. */
+  onOpenChange?: (isOpen: boolean) => void;
 }
 
 const FORMATS: { format: ExportFormat; label: string; hint: string }[] = [
@@ -17,8 +19,13 @@ const FORMATS: { format: ExportFormat; label: string; hint: string }[] = [
 const PNG_SCALES: PngScale[] = [1, 2, 4];
 
 /** TopBar "Export" button with a small dropdown of formats and options. */
-export const ExportMenu = ({ onExport, isLegendVisible }: ExportMenuProps) => {
-  const [isOpen, setIsOpen] = useState(false);
+export const ExportMenu = ({ onExport, isLegendVisible, onOpenChange }: ExportMenuProps) => {
+  const [isOpen, setIsOpenState] = useState(false);
+  const setIsOpen = (next: boolean) => {
+    setIsOpenState(next);
+    onOpenChange?.(next);
+  };
+  const close = useEffectEvent(() => setIsOpen(false));
   const [includeLegend, setIncludeLegend] = useState(isLegendVisible);
   const [pngScale, setPngScale] = useState<PngScale>(2);
   const [transparent, setTransparent] = useState(false);
@@ -27,10 +34,13 @@ export const ExportMenu = ({ onExport, isLegendVisible }: ExportMenuProps) => {
   useEffect(() => {
     if (!isOpen) return;
     const onPointerDown = (e: PointerEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) setIsOpen(false);
+      if (!rootRef.current?.contains(e.target as Node)) close();
     };
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setIsOpen(false);
+      if (e.key !== 'Escape') return;
+      // The menu is the top-most thing: Escape closes only it, not the canvas selection too
+      e.stopPropagation();
+      close();
     };
     document.addEventListener('pointerdown', onPointerDown);
     document.addEventListener('keydown', onKeyDown);
@@ -43,7 +53,7 @@ export const ExportMenu = ({ onExport, isLegendVisible }: ExportMenuProps) => {
   const toggle = () => {
     // The legend checkbox follows the canvas legend each time; the PNG options are remembered
     if (!isOpen) setIncludeLegend(isLegendVisible);
-    setIsOpen(o => !o);
+    setIsOpen(!isOpen);
   };
 
   const exportAs = (format: ExportFormat) => {

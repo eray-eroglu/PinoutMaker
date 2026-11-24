@@ -26,6 +26,7 @@ interface TopBarProps {
   /** Opens the pin table dialog; only useful once a header exists. */
   onOpenPinTable?: () => void;
   hasHeaders?: boolean;
+  onExportMenuOpenChange?: (isOpen: boolean) => void;
 }
 
 export const TopBar = ({
@@ -48,6 +49,7 @@ export const TopBar = ({
   isAddingHeader = false,
   onOpenPinTable,
   hasHeaders = false,
+  onExportMenuOpenChange,
 }: TopBarProps) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -119,7 +121,7 @@ export const TopBar = ({
         </div>
       </button>
 
-      <ExportMenu onExport={onExport} isLegendVisible={isLegendVisible} />
+      <ExportMenu onExport={onExport} isLegendVisible={isLegendVisible} onOpenChange={onExportMenuOpenChange} />
 
       <button
         onClick={onToggleLibrary}

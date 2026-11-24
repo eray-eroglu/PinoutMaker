@@ -162,19 +162,8 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // ESC cancels in-progress line
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && inProgressPoints) {
-        setInProgressPoints(null);
-        setMousePos(null);
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [inProgressPoints]);
-
-  // Cancel in-progress line when line mode is turned off
+  // Cancel the in-progress line when line mode is turned off (Esc does that in App, unless
+  // Esc closed an open panel instead)
   useEffect(() => {
     if (!isAddingLine) {
       setInProgressPoints(null);
@@ -671,6 +660,9 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
               </Group>
             );
           })}
+          {/* While a placing tool is active, clicks and drags go through pins and lines to the
+              stage, so a pin or header can be placed on a pad that already has a pin */}
+          <Group listening={!isPlacing}>
           {pins.map((pin) => (
             <PinComponent
               key={pin.id}
@@ -709,6 +701,7 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
               onUpdate={onUpdateLine}
             />
           ))}
+          </Group>
           {/* Alignment Guides */}
           {guides.gaps.map((g, i) => (
              <Rect

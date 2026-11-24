@@ -15,7 +15,7 @@ const SHORTCUTS: Array<[string, string]> = [
   ['Ctrl + = / Ctrl + -', 'Zoom in / out'],
   ['Shift (Add Header)', 'Keep the header straight while picking the last pad'],
   ['Ctrl + Enter', 'Apply the pin table'],
-  ['Esc', 'Clear selection, cancel drawing / header'],
+  ['Esc', 'Close the open panel; else clear selection, cancel drawing / header'],
   ['?', 'Show / hide this help'],
 ];
 

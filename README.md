@@ -54,9 +54,11 @@ label and color them, draw connection lines, and export the result as a PDF, SVG
 | <kbd>Ctrl</kbd>+<kbd>=</kbd> / <kbd>Ctrl</kbd>+<kbd>-</kbd> | Zoom in / out around the canvas centre |
 | <kbd>Shift</kbd> (Add Header) | Keep the header exactly horizontal / vertical while picking the last pad |
 | <kbd>Ctrl</kbd>+<kbd>Enter</kbd> | Apply the pin table (in the pin table dialog) |
-| <kbd>Esc</kbd> | Clear selection, cancel line drawing / add-pin / add-header mode |
+| <kbd>Esc</kbd> | Close the top-most open panel or dialog; otherwise clear selection, cancel line drawing / add-pin / add-header mode |
 | <kbd>?</kbd> | Show / hide the shortcuts overlay |
 | Mouse wheel | Zoom |
+
+While a dialog or panel (library, export menu, pin table, header settings, shortcuts overlay) is open, the canvas shortcuts are off.
 
 ## Development
 

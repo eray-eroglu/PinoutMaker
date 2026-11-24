@@ -33,13 +33,12 @@ import { combineIntoRows, planCombineRows } from './utils/combineRows';
 import { LABEL_HEIGHT, layoutPinLabels } from './utils/pinLayout';
 import { measureLabelText } from './utils/labelMeasure';
 import { MultiPinPanel } from './components/MultiPinPanel';
+import { isEditableElement, topOverlay } from './utils/keyboard';
+import type { Overlay } from './utils/keyboard';
 
 type HistoryState = { pins: PinData[]; lines: LineData[]; images: LoadedImage[]; labelScale: number | null };
 
 const PROJECT_FILE_TYPES = [{ description: 'JSON Files', accept: { 'application/json': ['.json'] } }];
-
-const isEditableElement = (el: Element | null) =>
-  el instanceof HTMLElement && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
 
 function App() {
   const [images, setImages] = useState<LoadedImage[]>([]);
@@ -67,6 +66,7 @@ function App() {
   const [legendItems, setLegendItems] = useState<LegendItem[]>(() => DEFAULT_LEGEND_ITEMS.map(i => ({ ...i })));
   const [isLegendVisible, setIsLegendVisible] = useState<boolean>(true);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
   const [legendMode, setLegendMode] = useState<LegendMode>('all');
   const [legendShowCounts, setLegendShowCounts] = useState<boolean>(false);
 
@@ -458,6 +458,9 @@ function App() {
 
   /** Adds copies of pins and selects them (paste/duplicate). The copies keep their relative layout. */
   const addPinCopies = (copies: PinData[]) => {
+    // The clipboard can outlive the project it came from (e.g. pasting into a newly opened,
+    // empty one): like any new pin, the copies fix the label scale
+    fixLabelScale();
     pushHistory();
     setPins(prev => [...prev, ...copies]);
     clearSelection();
@@ -484,6 +487,7 @@ function App() {
       copiedPinsRef.current = copies;
     } else if (copiedLineRef.current) {
       const newLine = duplicateLine(copiedLineRef.current);
+      fixLabelScale();
       pushHistory();
       setLines(prev => [...prev, newLine]);
       clearSelection();
@@ -703,6 +707,14 @@ function App() {
   };
 
   // --- Keyboard shortcuts ---
+  const closeOverlay = (overlay: Overlay) => {
+    if (overlay === 'help') setIsHelpOpen(false);
+    else if (overlay === 'pinTable') setIsPinTableOpen(false);
+    else if (overlay === 'library') setIsLibraryOpen(false);
+    else if (overlay === 'headerPanel') setHeaderDraft(null);
+    // The export menu handles its own Escape (and keeps it from reaching this handler)
+  };
+
   const onKeyDown = useEffectEvent((e: KeyboardEvent) => {
     // Typing in a field keeps the browser's own behaviour (text undo, backspace, copy/paste)
     if (isEditableElement(document.activeElement)) return;
@@ -710,13 +722,12 @@ function App() {
     const mod = e.ctrlKey || e.metaKey;
     const key = e.key.toLowerCase();
 
-    if (isHelpOpen) {
-      if (e.key === 'Escape' || e.key === '?') setIsHelpOpen(false);
-      return;
-    }
-    // The pin table dialog is modal: no editing shortcuts behind it
-    if (isPinTableOpen) {
-      if (e.key === 'Escape') setIsPinTableOpen(false);
+    // No canvas shortcuts behind an open panel or dialog; Escape closes only the top-most one
+    const overlay = topOverlay({
+      isHelpOpen, isPinTableOpen, isExportMenuOpen, isLibraryOpen, isHeaderPanelOpen: !!headerDraft,
+    });
+    if (overlay) {
+      if (e.key === 'Escape' || (overlay === 'help' && e.key === '?')) closeOverlay(overlay);
       return;
     }
 
@@ -838,6 +849,7 @@ function App() {
         isAddingHeader={isAddingHeader || !!headerDraft}
         onOpenPinTable={() => setIsPinTableOpen(true)}
         hasHeaders={headers.length > 0}
+        onExportMenuOpenChange={setIsExportMenuOpen}
       />
       <ProductLibrary
         isOpen={isLibraryOpen}

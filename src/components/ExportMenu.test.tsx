@@ -18,6 +18,21 @@ describe('ExportMenu', () => {
     expect(screen.queryByRole('menu')).toBeNull();
   });
 
+  it('reports open/close and keeps Escape from reaching the canvas shortcuts', () => {
+    const onOpenChange = vi.fn();
+    const onWindowKey = vi.fn();
+    window.addEventListener('keydown', onWindowKey);
+    render(<ExportMenu onExport={vi.fn()} isLegendVisible={true} onOpenChange={onOpenChange} />);
+    fireEvent.click(screen.getByRole('button', { name: /Export/ }));
+    expect(onOpenChange).toHaveBeenLastCalledWith(true);
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(onOpenChange).toHaveBeenLastCalledWith(false);
+    expect(onWindowKey).not.toHaveBeenCalled();
+    window.removeEventListener('keydown', onWindowKey);
+  });
+
   it('defaults "Include legend" to the canvas legend visibility', () => {
     const onExport = vi.fn();
     render(<ExportMenu onExport={onExport} isLegendVisible={false} />);
