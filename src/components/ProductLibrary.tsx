@@ -34,7 +34,10 @@ export const ProductLibrary = ({ isOpen, onClose, onImportProduct }: ProductLibr
       const { data, error: supabaseError } = await supabase
         .from('products')
         .select('*')
-        .order('name');
+        .order('name')
+        // Fail fast when Supabase is unreachable instead of retrying with a spinner forever
+        .retry(false)
+        .abortSignal(AbortSignal.timeout(10_000));
 
       if (supabaseError) throw supabaseError;
       const rows = (data ?? []) as Product[];
@@ -43,7 +46,9 @@ export const ProductLibrary = ({ isOpen, onClose, onImportProduct }: ProductLibr
       setExpandedCategories(new Set(rows.map(p => p.category)));
       setStatus('ready');
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to load data.');
+      // Supabase returns plain { message } objects, not Error instances
+      const message = typeof err === 'object' && err !== null && 'message' in err ? String(err.message) : '';
+      setError(message || 'Failed to load data.');
       setStatus('error');
     }
   };

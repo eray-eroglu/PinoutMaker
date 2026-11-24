@@ -450,6 +450,8 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
               { anchor: 'r', cursor: 'ew-resize' },
             ];
             const selectThisImage = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
+              // In pin/line mode the click must reach the stage, which places the pin or line point
+              if (isAddingPin || isAddingLine) return;
               e.cancelBubble = true;
               onSelectImage(img.id);
               onSelectPin(null);
