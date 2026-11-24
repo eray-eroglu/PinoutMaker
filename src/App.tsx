@@ -15,6 +15,10 @@ import { clearAutosave, loadAutosave } from './utils/autosave';
 import type { AutosaveRecord } from './utils/autosave';
 import { useAutosave } from './hooks/useAutosave';
 import { RestoreBanner } from './components/RestoreBanner';
+import { ShortcutsHelp } from './components/ShortcutsHelp';
+import { centreOn, fitToContent, getContentBounds, zoomAroundCentre, ZOOM_FACTOR } from './utils/viewport';
+import { ARROW_DELTAS, nudgeImage, nudgeLine, nudgePin } from './utils/nudge';
+import { duplicateLine, duplicatePin } from './utils/duplicate';
 
 type HistoryState = { pins: PinData[]; lines: LineData[]; images: LoadedImage[]; labelScale: number | null };
 
@@ -41,6 +45,7 @@ function App() {
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
   const [legendItems, setLegendItems] = useState<LegendItem[]>(() => DEFAULT_LEGEND_ITEMS.map(i => ({ ...i })));
   const [isLegendVisible, setIsLegendVisible] = useState<boolean>(true);
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
 
   // Lifted state for CanvasStage
   const [scale, setScale] = useState(1);
@@ -311,33 +316,80 @@ function App() {
   const pasteClipboard = () => {
     // Each paste is offset 20 units from the previous one, so repeated pastes chain.
     if (copiedPinRef.current) {
-      const original = copiedPinRef.current;
-      const newPin: PinData = {
-        ...original,
-        id: crypto.randomUUID(),
-        x: original.x + 20,
-        y: original.y + 20,
-        targetX: original.targetX + 20,
-        targetY: original.targetY + 20,
-      };
+      const newPin = duplicatePin(copiedPinRef.current);
       pushHistory();
       setPins(prev => [...prev, newPin]);
       clearSelection();
       setSelectedPinId(newPin.id);
       copiedPinRef.current = newPin;
     } else if (copiedLineRef.current) {
-      const original = copiedLineRef.current;
-      const newLine: LineData = {
-        ...original,
-        id: crypto.randomUUID(),
-        points: original.points.map(v => v + 20),
-      };
+      const newLine = duplicateLine(copiedLineRef.current);
       pushHistory();
       setLines(prev => [...prev, newLine]);
       clearSelection();
       setSelectedLineId(newLine.id);
       copiedLineRef.current = newLine;
     }
+  };
+
+  /** Duplicates the selection in place (paste offset) without touching the clipboard. */
+  const duplicateSelection = () => {
+    const pin = pins.find(p => p.id === selectedPinId);
+    const line = lines.find(l => l.id === selectedLineId);
+    if (pin) {
+      const copy = duplicatePin(pin);
+      pushHistory();
+      setPins(prev => [...prev, copy]);
+      clearSelection();
+      setSelectedPinId(copy.id);
+    } else if (line) {
+      const copy = duplicateLine(line);
+      pushHistory();
+      setLines(prev => [...prev, copy]);
+      clearSelection();
+      setSelectedLineId(copy.id);
+    }
+  };
+
+  // --- Viewport shortcuts ---
+  const getViewportSize = () => {
+    const stage = stageRef.current;
+    return { width: stage?.width() ?? window.innerWidth - 320, height: stage?.height() ?? window.innerHeight - 56 };
+  };
+  const contentBounds = () => getContentBounds({ images, pins, lines, labelScale: effectiveLabelScale });
+
+  const fitToScreen = () => {
+    const view = fitToContent(contentBounds(), getViewportSize());
+    setScale(view.scale);
+    setPosition(view.position);
+  };
+
+  const resetZoom = () => {
+    setScale(1);
+    setPosition(centreOn(contentBounds(), getViewportSize(), 1));
+  };
+
+  const zoomBy = (factor: number) => {
+    const view = zoomAroundCentre({ scale, position }, getViewportSize(), factor);
+    setScale(view.scale);
+    setPosition(view.position);
+  };
+
+  /** Arrow-key nudge of the selection. One history entry per key-hold burst (not on auto-repeat). */
+  const nudgeSelection = (e: KeyboardEvent) => {
+    const [ux, uy] = ARROW_DELTAS[e.key];
+    const step = e.shiftKey ? 10 : 1;
+    const dx = ux * step;
+    const dy = uy * step;
+    const pin = pins.find(p => p.id === selectedPinId);
+    const line = lines.find(l => l.id === selectedLineId);
+    const image = images.find(i => i.id === selectedImageId);
+    if (!pin && !line && !image) return; // nothing selected: let the page scroll as usual
+    e.preventDefault();
+    if (!e.repeat) pushHistory();
+    if (pin) updatePin(nudgePin(pin, dx, dy, e.altKey), false);
+    else if (line) updateLine(nudgeLine(line, dx, dy), false);
+    else if (image) updateImage(nudgeImage(image, dx, dy), false);
   };
 
   // --- Save / load ---
@@ -493,8 +545,35 @@ function App() {
     const mod = e.ctrlKey || e.metaKey;
     const key = e.key.toLowerCase();
 
+    if (isHelpOpen) {
+      if (e.key === 'Escape' || e.key === '?') setIsHelpOpen(false);
+      return;
+    }
+
     if (e.key === 'Delete' || e.key === 'Backspace') {
       deleteSelected();
+    } else if (e.key in ARROW_DELTAS && !mod) {
+      nudgeSelection(e);
+    } else if (e.key === 'Escape') {
+      clearSelection();
+      setIsAddingPin(false);
+      setIsAddingLine(false);
+    } else if (e.key === '?') {
+      setIsHelpOpen(true);
+    } else if (e.shiftKey && !mod && e.code === 'Digit1') {
+      fitToScreen();
+    } else if (mod && e.code === 'Digit0') {
+      e.preventDefault();
+      resetZoom();
+    } else if (mod && (e.key === '=' || e.key === '+' || e.code === 'NumpadAdd')) {
+      e.preventDefault();
+      zoomBy(ZOOM_FACTOR);
+    } else if (mod && (e.key === '-' || e.code === 'NumpadSubtract')) {
+      e.preventDefault();
+      zoomBy(1 / ZOOM_FACTOR);
+    } else if (mod && key === 'd') {
+      e.preventDefault();
+      duplicateSelection();
     } else if (mod && key === 'c') {
       copySelection();
     } else if (mod && key === 'v') {
@@ -543,6 +622,7 @@ function App() {
         onClose={() => setIsLibraryOpen(false)}
         onImportProduct={handleImportProduct}
       />
+      {isHelpOpen && <ShortcutsHelp onClose={() => setIsHelpOpen(false)} />}
       <div className='flex flex-1 overflow-hidden'>
         <div className='relative flex flex-1 min-w-0'>
           {recoveredAutosave && (
@@ -581,6 +661,7 @@ function App() {
             anchorSize={anchorSize}
             labelScale={effectiveLabelScale}
             onPushHistory={pushHistory}
+            onFitToScreen={fitToScreen}
           />
         </div>
         <Sidebar

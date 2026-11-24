@@ -1,6 +1,7 @@
 import { useEffect, forwardRef, useState, useRef, useCallback  } from 'react';
 import { Stage, Layer, Line, Rect, Image as KonvaImage, Circle, Group } from 'react-konva';
 import Konva from 'konva';
+import { Maximize } from 'lucide-react';
 import type { PinData, LineData, LegendItem } from '../types';
 import type { LoadedImage } from '../utils/project';
 import { PinComponent } from './PinComponent';
@@ -39,6 +40,8 @@ interface CanvasStageProps {
   labelScale: number;
   /** Records an undo snapshot; called before a drag starts. */
   onPushHistory: () => void;
+  /** Zooms and pans so all content is visible. */
+  onFitToScreen?: () => void;
 }
 
 export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
@@ -69,6 +72,7 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
   anchorSize,
   labelScale,
   onPushHistory,
+  onFitToScreen,
 }, ref) => {
 
   const [dimensions, setDimensions] = useState({
@@ -650,8 +654,19 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
           )}
         </Layer>
       </Stage>
-      <div className='absolute bottom-2 right-2 pointer-events-none text-gray-500 text-xs bg-white/80 p-1 rounded shadow'>
-        Scale: {scale.toFixed(2)}x
+      <div className='absolute bottom-2 right-2 flex items-center gap-1 text-gray-500 text-xs bg-white/80 p-1 rounded shadow'>
+        <span className='pointer-events-none'>Scale: {scale.toFixed(2)}x</span>
+        {onFitToScreen && (
+          <button
+            type='button'
+            onClick={onFitToScreen}
+            title='Fit to screen (Shift+1)'
+            aria-label='Fit to screen'
+            className='p-0.5 rounded hover:bg-gray-200 text-gray-600'
+          >
+            <Maximize size={14} />
+          </button>
+        )}
       </div>
 
       {/* Legend Panel */}
