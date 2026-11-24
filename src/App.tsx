@@ -7,7 +7,8 @@ import { ProductLibrary } from './components/ProductLibrary';
 import type { Product } from './components/ProductLibrary';
 import type { PinData, LineData, LegendItem } from './types';
 import { DEFAULT_ANCHOR_SIZE, DEFAULT_GAP_SIZE, DEFAULT_LEGEND_ITEMS } from './constants';
-import { DEFAULT_PIN_COLOR, scaleLabelsAroundAnchors } from './utils/pinUtils';
+import { DEFAULT_PIN_COLOR, clonePin, scaleLabelsAroundAnchors } from './utils/pinUtils';
+import type { FocusSidebarInputDetail } from './components/Sidebar';
 import { loadImageElement, loadProjectImages, parseProject, serializeProject } from './utils/project';
 import type { LoadedImage } from './utils/project';
 import { exportPdf } from './utils/exportPdf';
@@ -31,6 +32,9 @@ function App() {
   const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
   const [pins, setPins] = useState<PinData[]>([]);
   const [selectedPinId, setSelectedPinId] = useState<string | null>(null);
+  // Which label of the selected pin the user picked on the canvas (-1 = primary label),
+  // so the sidebar can highlight and focus that function's editor.
+  const [selectedFunctionIndex, setSelectedFunctionIndex] = useState(-1);
   const [lines, setLines] = useState<LineData[]>([]);
   const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
   const [isAddingPin, setIsAddingPin] = useState(false);
@@ -130,6 +134,7 @@ function App() {
 
   const clearSelection = () => {
     setSelectedPinId(null);
+    setSelectedFunctionIndex(-1);
     setSelectedLineId(null);
     setSelectedImageId(null);
   };
@@ -273,8 +278,9 @@ function App() {
     }
   };
 
-  const selectPin = (id: string | null) => {
+  const selectPin = (id: string | null, functionIndex = -1) => {
     setSelectedPinId(id);
+    setSelectedFunctionIndex(functionIndex);
     if (id) {
       setSelectedLineId(null);
       setSelectedImageId(null);
@@ -289,11 +295,12 @@ function App() {
     }
   };
 
-  const handlePinDoubleClick = (id: string) => {
+  const handlePinDoubleClick = (id: string, functionIndex: number) => {
     clearSelection();
     setSelectedPinId(id);
-    // Focus the pin name input in the sidebar
-    window.dispatchEvent(new CustomEvent('focus-sidebar-input'));
+    setSelectedFunctionIndex(functionIndex);
+    // Focus the editor of the double-clicked label (pin name or function) in the sidebar
+    window.dispatchEvent(new CustomEvent<FocusSidebarInputDetail>('focus-sidebar-input', { detail: { functionIndex } }));
   };
 
   const copySelection = () => {
@@ -311,15 +318,7 @@ function App() {
   const pasteClipboard = () => {
     // Each paste is offset 20 units from the previous one, so repeated pastes chain.
     if (copiedPinRef.current) {
-      const original = copiedPinRef.current;
-      const newPin: PinData = {
-        ...original,
-        id: crypto.randomUUID(),
-        x: original.x + 20,
-        y: original.y + 20,
-        targetX: original.targetX + 20,
-        targetY: original.targetY + 20,
-      };
+      const newPin = clonePin(copiedPinRef.current, 20, 20);
       pushHistory();
       setPins(prev => [...prev, newPin]);
       clearSelection();
@@ -477,7 +476,7 @@ function App() {
     clearSelection();
     await nextFrame();
     try {
-      const exported = await exportPdf(stage, { images, pins, lines, scale, labelScale: effectiveLabelScale, legendItems, isLegendVisible });
+      const exported = await exportPdf(stage, { images, pins, lines, scale, labelScale: effectiveLabelScale, gapSize, legendItems, isLegendVisible });
       if (!exported) alert('Nothing to export!');
     } catch (e) {
       console.error('PDF Export failed', e);
@@ -560,6 +559,7 @@ function App() {
             onSelectImage={setSelectedImageId}
             pins={pins}
             selectedPinId={selectedPinId}
+            selectedFunctionIndex={selectedFunctionIndex}
             onSelectPin={selectPin}
             onUpdatePin={updatePin}
             onDoubleClickPin={handlePinDoubleClick}
@@ -585,6 +585,8 @@ function App() {
         </div>
         <Sidebar
           selectedPin={selectedPin}
+          selectedFunctionIndex={selectedFunctionIndex}
+          onSelectFunctionIndex={setSelectedFunctionIndex}
           onUpdatePin={updatePin}
           selectedLine={selectedLine}
           onUpdateLine={updateLine}

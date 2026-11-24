@@ -1,30 +1,64 @@
-import React, { useRef, useLayoutEffect, useEffect, useEffectEvent } from 'react';
-import { Label, Tag, Text, Circle, Line } from 'react-konva';
+import React, { useRef, useState } from 'react';
+import { Label, Tag, Text, Circle, Line, Group } from 'react-konva';
 import Konva from 'konva';
 import type { PinData } from '../types';
 import { calculateManhattanPath, calculateWavePoints } from '../utils/lineUtils';
 import { isLightColor } from '../utils/colorUtils';
+import {
+  LABEL_FONT_FAMILY,
+  LABEL_FONT_SIZE,
+  LABEL_FONT_STYLE,
+  LABEL_PADDING,
+  layoutPinLabels,
+} from '../utils/pinLayout';
+import { measureLabelText } from '../utils/labelMeasure';
 
 interface PinComponentProps {
   pin: PinData;
   /** World size of one label unit (project-wide). Labels, anchor and leader line scale with it. */
   labelScale: number;
+  /** World gap between the labels of the row. */
+  gapSize: number;
   isSelected: boolean;
+  /** Index into pin.functions of the label the user picked, -1 for the primary label. */
+  selectedFunctionIndex: number;
   onSelect: (
     id: string,
+    functionIndex: number,
     e: Konva.KonvaEventObject<MouseEvent | TouchEvent>
   ) => void;
   onUpdate: (pin: PinData, saveHistory?: boolean) => void;
   onDragMove?: (id: string, x: number, y: number, isCtrlPressed: boolean) => { x: number, y: number } | void;
   onDragEnd?: () => void;
-  onDoubleClick: (id: string, currentText: string) => void;
+  onDoubleClick: (id: string, functionIndex: number) => void;
   anchorSize: number;
 }
+
+type Point = { x: number; y: number };
+
+/**
+ * Position shown while dragging, overriding the stored one. It is never cleared on drop:
+ * react-konva re-renders state changes synchronously, so clearing it would snap the node back
+ * to the old stored position before the parent's update arrives (and Konva would report that
+ * stale position). Instead it is dropped as soon as the stored position changes.
+ */
+const useDragOverride = (stored: Point) => {
+  const [override, setOverride] = useState<Point | null>(null);
+  const [seen, setSeen] = useState(stored);
+  if (seen.x !== stored.x || seen.y !== stored.y) {
+    // Adjusting state during render (React's pattern for reacting to a prop change)
+    setSeen(stored);
+    setOverride(null);
+  }
+  return [override ?? stored, setOverride] as const;
+};
 
 export const PinComponent: React.FC<PinComponentProps> = ({
   pin,
   labelScale,
+  gapSize,
   isSelected,
+  selectedFunctionIndex,
   onSelect,
   onUpdate,
   onDragMove,
@@ -32,100 +66,51 @@ export const PinComponent: React.FC<PinComponentProps> = ({
   onDoubleClick,
   anchorSize,
 }) => {
-  const labelRef = useRef<Konva.Label>(null);
-  const anchorRef = useRef<Konva.Circle>(null);
-  const lineRef = useRef<Konva.Line>(null);
-  const lastClickTimeRef = useRef(0);
+  const lastClickRef = useRef({ time: 0, functionIndex: -1 });
 
-  // Store the measured label size (label units) so CanvasStage can snap to label edges.
-  const syncLabelMetrics = useEffectEvent(() => {
-    if (!labelRef.current) return;
-    const w = labelRef.current.width();
-    const h = labelRef.current.height();
-    if (pin.labelWidth !== w || pin.labelHeight !== h) {
-      onUpdate({ ...pin, labelWidth: w, labelHeight: h }, false);
-    }
-  });
+  // Live positions while dragging. Rendering from them (instead of letting Konva move nodes
+  // on its own) keeps the leader line attached and lets the row flip sides the moment the
+  // label crosses its anchor.
+  const [label, setLabelDrag] = useDragOverride({ x: pin.x, y: pin.y });
+  const [anchor, setAnchorDrag] = useDragOverride({ x: pin.targetX, y: pin.targetY });
+  const layout = layoutPinLabels(
+    { ...pin, ...label, targetX: anchor.x },
+    labelScale,
+    gapSize,
+    measureLabelText,
+  );
 
-  // Run on mount and whenever the text (and therefore the label size) changes
-  useEffect(() => {
-    syncLabelMetrics();
-  }, [pin.text]);
+  const primary = layout.labels[0];
+  let leaderPoints = calculateManhattanPath(
+    primary.x + primary.width / 2,
+    primary.y + primary.height / 2,
+    anchor.x,
+    anchor.y,
+  );
+  if (pin.isPwm) {
+    // The wave helper sizes the wave as 1/scale; pass 1/labelScale so it scales with the label
+    leaderPoints = calculateWavePoints(leaderPoints, 1 / labelScale);
+  }
 
-  const updateLine = React.useCallback(() => {
-    if (labelRef.current && anchorRef.current && lineRef.current) {
-      const labelNode = labelRef.current;
-      const anchorNode = anchorRef.current;
-      
-      const width = labelNode.width();
-      const height = labelNode.height();
-
-      const labelX = labelNode.x();
-      const labelY = labelNode.y();
-
-      const centerX = labelX + (width * labelNode.scaleX()) / 2;
-      const centerY = labelY + (height * labelNode.scaleY()) / 2;
-
-      const anchorPos = anchorNode.position();
-
-      // Set points via refs
-      const x1 = centerX;
-      const y1 = centerY;
-      const x2 = anchorPos.x;
-      const y2 = anchorPos.y;
-
-      let points = calculateManhattanPath(x1, y1, x2, y2);
-
-      // PWM Wave Effect
-      if (pin.isPwm) {
-        // The wave helper sizes the wave as 1/scale; pass 1/labelScale so it scales with the label
-        points = calculateWavePoints(points, 1 / labelScale);
+  const handleRowDragMove = (e: Konva.KonvaEventObject<DragEvent>) => {
+    const node = e.target;
+    let pos = { x: node.x(), y: node.y() };
+    if (onDragMove) {
+      const snapped = onDragMove(pin.id, pos.x, pos.y, e.evt.ctrlKey || e.evt.metaKey);
+      if (snapped) {
+        node.position(snapped);
+        pos = snapped;
       }
-      
-      lineRef.current.points(points);
-      
-      // Force a layer redraw (prevents flickering and position drift)
-      lineRef.current.getLayer()?.batchDraw(); 
     }
-  }, [pin.isPwm, labelScale]); // Note: We read positions from refs directly (labelNode.x()) which is updated by Konva during drag.
-                          // However, for initial render or props change, we need to trigger it.
-
-  useLayoutEffect(() => {
-    updateLine();
-  }, [pin.x, pin.y, pin.targetX, pin.targetY, pin.text, labelScale, pin.isPwm, updateLine]);
-
-
-  const handleDragMove = (e: Konva.KonvaEventObject<DragEvent>) => {
-    // Notify parent about new position during drag
-    let snappedPos = { x: 0, y: 0};
-    if (labelRef.current) {
-        snappedPos.x = labelRef.current.x();
-        snappedPos.y = labelRef.current.y();
-        
-        if (onDragMove) {
-            const isCtrlPressed = e.evt.ctrlKey || e.evt.metaKey;
-            const result = onDragMove(pin.id, snappedPos.x, snappedPos.y, isCtrlPressed);
-            if (result && (result.x !== snappedPos.x || result.y !== snappedPos.y)) {
-                // If snap occurred, update position immediately
-                labelRef.current.position({ x: result.x, y: result.y });
-                snappedPos = result;
-            }
-        }
-    }
-    
-    updateLine();
+    setLabelDrag(pos);
   };
 
-  const handleLabelDragEnd = (e: Konva.KonvaEventObject<DragEvent>) => {
+  const handleRowDragEnd = (e: Konva.KonvaEventObject<DragEvent>) => {
+    const x = e.target.x();
+    const y = e.target.y();
     if (onDragEnd) onDragEnd(); // Clear guides
-    onUpdate({
-      ...pin,
-      x: e.target.x(),
-      y: e.target.y(),
-      // Keep the measured size so CanvasStage can align right edges
-      labelWidth: labelRef.current?.width() || pin.labelWidth,
-      labelHeight: labelRef.current?.height() || pin.labelHeight,
-    }, true);
+    // The primary label position is all that is stored; the rest of the row follows it
+    onUpdate({ ...pin, x, y }, true);
   };
 
   const handleAnchorDragEnd = (e: Konva.KonvaEventObject<DragEvent>) => {
@@ -141,96 +126,103 @@ export const PinComponent: React.FC<PinComponentProps> = ({
     }, true);
   };
 
-  const handleSelect = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
+  const handleSelect = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>, functionIndex: number) => {
     e.cancelBubble = true;
-    
-    // Manual double click detection
-    const currentTime = new Date().getTime();
-    const timeDiff = currentTime - lastClickTimeRef.current;
 
-    if (timeDiff < 300) {
-      onDoubleClick(pin.id, pin.text);
-      lastClickTimeRef.current = 0; // Reset
+    // Manual double click detection; both clicks must hit the same label
+    const now = Date.now();
+    const last = lastClickRef.current;
+    if (now - last.time < 300 && last.functionIndex === functionIndex) {
+      onDoubleClick(pin.id, functionIndex);
+      lastClickRef.current = { time: 0, functionIndex: -1 };
     } else {
-      lastClickTimeRef.current = currentTime;
-      onSelect(pin.id, e);
+      lastClickRef.current = { time: now, functionIndex };
+      onSelect(pin.id, functionIndex, e);
     }
   };
 
+  const entries = [
+    { key: 'primary', text: pin.text, color: pin.color, textColor: pin.textColor },
+    ...(pin.functions ?? []).map(fn => ({ key: fn.id, text: fn.text, color: fn.color, textColor: fn.textColor })),
+  ];
 
   return (
     <>
       <Line
-        ref={lineRef}
-        // Points are set via ref in updateLine
+        points={leaderPoints}
         stroke={pin.color}
         strokeWidth={2 * labelScale}
         listening={false}
       />
 
       <Circle
-        ref={anchorRef}
-        x={pin.targetX}
-        y={pin.targetY}
+        x={anchor.x}
+        y={anchor.y}
         radius={Math.max(0.1, anchorSize)}
         fill={anchorSize === 0 ? 'transparent' : pin.color}
         draggable
         scaleX={labelScale}
         scaleY={labelScale}
-        onDragMove={updateLine}
+        onDragMove={(e) => setAnchorDrag({ x: e.target.x(), y: e.target.y() })}
         onDragEnd={handleAnchorDragEnd}
-        onClick={handleSelect}
-        onTap={handleSelect}
+        onClick={(e) => handleSelect(e, -1)}
+        onTap={(e) => handleSelect(e, -1)}
         stroke={isSelected && anchorSize > 0 ? '#333' : undefined}
         strokeWidth={isSelected && anchorSize > 0 ? 2 : 0}
         strokeScaleEnabled={false}
         hitStrokeWidth={15}
       />
 
-      <Label
-        ref={labelRef}
-        x={pin.x}
-        y={pin.y}
+      {/* The row is one draggable group positioned at the primary label, so grabbing any label moves them all */}
+      <Group
+        x={label.x}
+        y={label.y}
         draggable
-        scaleX={labelScale}
-        scaleY={labelScale}
-        onDragMove={handleDragMove}
-        onDragEnd={handleLabelDragEnd}
-        onClick={handleSelect}
-        onTap={handleSelect}
+        onDragMove={handleRowDragMove}
+        onDragEnd={handleRowDragEnd}
       >
-        <Tag
-          fill={pin.color}
-          cornerRadius={4}
-          shadowColor='black'
-          shadowBlur={isSelected ? 10 : 2}
-          shadowOpacity={0.2}
-          shadowOffset={{ x: 2, y: 2 }}
-          stroke={isSelected ? '#333' : undefined}
-          strokeWidth={isSelected ? 1.5 : 0}
-          strokeScaleEnabled={false}
-          listening={true}
-          onClick={handleSelect}
-          onTap={handleSelect}
-        />
-        <Text
-          text={pin.text}
-          onClick={handleSelect}
-          onTap={handleSelect}
-          fill={
-            pin.textColor || (isLightColor(pin.color)
-              ? 'black'
-              : 'white')
-          }
-          padding={6}
-          fontFamily='Inter, sans-serif'
-          fontSize={12}
-          fontStyle='600'
-          width={pin.text.length <= 6 ? 60 : undefined} 
-          align='center' 
-          listening={true}
-        />
-      </Label>
+        {layout.labels.map((rect, i) => {
+          const entry = entries[i];
+          const functionIndex = i - 1;
+          const isFocused = isSelected && functionIndex === selectedFunctionIndex && (pin.functions?.length ?? 0) > 0;
+          return (
+            <Label
+              key={entry.key}
+              x={rect.x - label.x}
+              y={rect.y - label.y}
+              scaleX={labelScale}
+              scaleY={labelScale}
+              onClick={(e) => handleSelect(e, functionIndex)}
+              onTap={(e) => handleSelect(e, functionIndex)}
+            >
+              <Tag
+                fill={entry.color}
+                cornerRadius={4}
+                shadowColor='black'
+                shadowBlur={isSelected ? 10 : 2}
+                shadowOpacity={0.2}
+                shadowOffset={{ x: 2, y: 2 }}
+                // The label the user picked (for the sidebar) gets a blue outline
+                stroke={isFocused ? '#2563eb' : isSelected ? '#333' : undefined}
+                strokeWidth={isFocused ? 2.5 : isSelected ? 1.5 : 0}
+                strokeScaleEnabled={false}
+              />
+              <Text
+                text={entry.text}
+                fill={entry.textColor || (isLightColor(entry.color) ? 'black' : 'white')}
+                padding={LABEL_PADDING}
+                fontFamily={LABEL_FONT_FAMILY}
+                fontSize={LABEL_FONT_SIZE}
+                fontStyle={LABEL_FONT_STYLE}
+                // Fixed layout width keeps the columns aligned; never wrap if measurement is a pixel off
+                width={rect.width / labelScale}
+                wrap='none'
+                align='center'
+              />
+            </Label>
+          );
+        })}
+      </Group>
     </>
   );
 };

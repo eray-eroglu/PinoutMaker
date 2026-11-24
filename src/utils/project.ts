@@ -1,6 +1,6 @@
-import type { BoardImage, LegendItem, LineData, PinData, ProjectData } from '../types';
+import type { BoardImage, LegendItem, LineData, PinData, PinFunction, ProjectData } from '../types';
 import { DEFAULT_ANCHOR_SIZE, DEFAULT_GAP_SIZE, DEFAULT_LEGEND_ITEMS } from '../constants';
-import { migrateLegacyPin } from './pinUtils';
+import { DEFAULT_PIN_COLOR, migrateLegacyPin } from './pinUtils';
 
 export interface LoadedImage extends BoardImage {
   element: HTMLImageElement;
@@ -39,6 +39,28 @@ export interface ParsedProject extends Omit<ProjectState, 'images'> {
   images: Array<Omit<BoardImage, 'width' | 'height'> & { width?: number; height?: number }>;
 }
 
+/**
+ * Pins from older files have no `functions` and are returned untouched. Hand-edited or
+ * generated files may leave out ids or colors; fill them so the editor can rely on them.
+ */
+const normalizeFunctions = (pin: PinData): PinData => {
+  if (pin.functions === undefined) return pin;
+  if (!Array.isArray(pin.functions)) {
+    const rest = { ...pin };
+    delete rest.functions;
+    return rest;
+  }
+  return {
+    ...pin,
+    functions: pin.functions.map((fn: Partial<PinFunction>) => ({
+      ...fn,
+      id: fn.id || crypto.randomUUID(),
+      text: typeof fn.text === 'string' ? fn.text : '',
+      color: fn.color || DEFAULT_PIN_COLOR,
+    })),
+  };
+};
+
 /** Parses a saved project file, filling defaults and migrating legacy formats. Throws on invalid JSON. */
 export const parseProject = (content: string): ParsedProject => {
   const data = JSON.parse(content) as Partial<ProjectData>;
@@ -65,9 +87,11 @@ export const parseProject = (content: string): ParsedProject => {
     return l;
   });
 
+  const migratedPins = (isLegacy ? pins.map(p => migrateLegacyPin(p, savedScale)) : pins).map(normalizeFunctions);
+
   return {
     images,
-    pins: isLegacy ? pins.map(p => migrateLegacyPin(p, savedScale)) : pins,
+    pins: migratedPins,
     lines,
     scale: savedScale,
     position: data.position ?? { x: 0, y: 0 },

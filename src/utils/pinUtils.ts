@@ -1,4 +1,4 @@
-import type { PinData } from '../types';
+import type { PinData, PinFunction } from '../types';
 
 export const DEFAULT_PIN_COLOR = '#ef4444'; // red-500
 
@@ -65,13 +65,59 @@ export const getSmartColor = (text: string): string | null => {
 };
 
 /**
- * Color to use after the pin name changes. The smart color is only applied while the
- * pin still has an automatic color (the default, or the smart color of its previous
- * name); a color the user picked by hand is never overwritten.
+ * Color to use after a label's text changes (the pin name or one of its functions). The smart
+ * color is only applied while the label still has an automatic color (the default, or the
+ * smart color of its previous text); a color the user picked by hand is never overwritten.
  */
-export const getColorForRename = (pin: PinData, newText: string): string => {
-  const previousSmart = getSmartColor(pin.text);
-  const isAutoColor = pin.color === DEFAULT_PIN_COLOR || pin.color === previousSmart;
-  if (!isAutoColor) return pin.color;
-  return getSmartColor(newText) ?? (previousSmart !== null ? DEFAULT_PIN_COLOR : pin.color);
+export const getColorForRename = (label: { text: string; color: string }, newText: string): string => {
+  const previousSmart = getSmartColor(label.text);
+  const isAutoColor = label.color === DEFAULT_PIN_COLOR || label.color === previousSmart;
+  if (!isAutoColor) return label.color;
+  return getSmartColor(newText) ?? (previousSmart !== null ? DEFAULT_PIN_COLOR : label.color);
 };
+
+// --- Function labels ---
+// All helpers return a new pin; the functions array is never mutated, so history snapshots
+// that share it stay intact.
+
+export const addPinFunction = (pin: PinData, text = ''): PinData => ({
+  ...pin,
+  functions: [...(pin.functions ?? []), { id: crypto.randomUUID(), text, color: getSmartColor(text) ?? DEFAULT_PIN_COLOR }],
+});
+
+export const removePinFunction = (pin: PinData, index: number): PinData => ({
+  ...pin,
+  functions: (pin.functions ?? []).filter((_, i) => i !== index),
+});
+
+/** Moves a function label one place towards (-1) or away from (+1) the primary label. */
+export const movePinFunction = (pin: PinData, index: number, delta: -1 | 1): PinData => {
+  const functions = [...(pin.functions ?? [])];
+  const target = index + delta;
+  if (index < 0 || index >= functions.length || target < 0 || target >= functions.length) return pin;
+  [functions[index], functions[target]] = [functions[target], functions[index]];
+  return { ...pin, functions };
+};
+
+export const updatePinFunction = (pin: PinData, index: number, changes: Partial<Omit<PinFunction, 'id'>>): PinData => ({
+  ...pin,
+  functions: (pin.functions ?? []).map((fn, i) => (i === index ? { ...fn, ...changes } : fn)),
+});
+
+/** Renames a function label; its color follows the name like the primary label's does. */
+export const renamePinFunction = (pin: PinData, index: number, text: string): PinData => {
+  const fn = pin.functions?.[index];
+  if (!fn) return pin;
+  return updatePinFunction(pin, index, { text, color: getColorForRename(fn, text) });
+};
+
+/** Copy of a pin (for paste) moved by a world offset, with fresh ids for it and its functions. */
+export const clonePin = (pin: PinData, dx: number, dy: number): PinData => ({
+  ...pin,
+  id: crypto.randomUUID(),
+  x: pin.x + dx,
+  y: pin.y + dy,
+  targetX: pin.targetX + dx,
+  targetY: pin.targetY + dy,
+  ...(pin.functions ? { functions: pin.functions.map(fn => ({ ...fn, id: crypto.randomUUID() })) } : {}),
+});

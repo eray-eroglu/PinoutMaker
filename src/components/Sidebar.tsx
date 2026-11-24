@@ -2,10 +2,27 @@ import { useState, useRef, useEffect } from 'react';
 import type { PinData, LineData, LegendItem } from '../types';
 import type { LoadedImage } from '../utils/project';
 import { isLightColor } from '../utils/colorUtils';
-import { getColorForRename, nudgeLabel } from '../utils/pinUtils';
+import {
+  addPinFunction,
+  getColorForRename,
+  movePinFunction,
+  nudgeLabel,
+  removePinFunction,
+  renamePinFunction,
+  updatePinFunction,
+} from '../utils/pinUtils';
+
+/** Detail of the window 'focus-sidebar-input' event: which label's editor to focus. */
+export interface FocusSidebarInputDetail {
+  /** Index into the pin's functions; -1 focuses the pin name. */
+  functionIndex: number;
+}
 
 interface SidebarProps {
   selectedPin: PinData | null;
+  /** Label of the selected pin picked on the canvas (-1 = primary label). */
+  selectedFunctionIndex: number;
+  onSelectFunctionIndex: (index: number) => void;
   onUpdatePin: (pin: PinData, saveHistory?: boolean) => void;
   selectedImage: LoadedImage | null;
   onUpdateImage: (img: LoadedImage, saveHistory?: boolean) => void;
@@ -42,8 +59,40 @@ const COLORS = [
   '#1f2937', // gray-800 (default/neutral)
 ];
 
+/** Palette swatches plus a custom color picker; the selected color gets a ring. */
+const ColorPalette = ({ value, onChange }: { value: string; onChange: (color: string) => void }) => (
+  <div className='grid grid-cols-4 gap-2'>
+    {COLORS.map((c) => (
+      <div
+        key={c}
+        className={`w-8 h-8 rounded cursor-pointer transition-transform hover:scale-110`}
+        style={{
+          backgroundColor: c,
+          boxShadow: value === c ? '0 0 0 2px white, 0 0 0 4px gray' : 'none',
+        }}
+        onClick={() => onChange(c)}
+      ></div>
+    ))}
+    <div
+      className={`w-8 h-8 rounded cursor-pointer transition-transform hover:scale-110 relative flex items-center justify-center overflow-hidden`}
+      style={{
+        background: 'conic-gradient(red, yellow, lime, aqua, blue, magenta, red)',
+        boxShadow: !COLORS.includes(value) ? '0 0 0 2px white, 0 0 0 4px gray' : 'none',
+      }}
+      title="Custom Color"
+    >
+      <input
+        type="color"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="opacity-0 absolute inset-0 w-full h-full cursor-pointer"
+      />
+    </div>
+  </div>
+);
+
 export const Sidebar = ({
-  selectedPin, onUpdatePin, selectedImage, onUpdateImage, 
+  selectedPin, selectedFunctionIndex, onSelectFunctionIndex, onUpdatePin, selectedImage, onUpdateImage,
   selectedLine, onUpdateLine,
   onPushHistory, gapSize, onGapSizeChange,
   legendItems, onLegendItemsChange, isLegendVisible, onLegendVisibilityChange, anchorSize, onAnchorSizeChange,
@@ -51,14 +100,22 @@ export const Sidebar = ({
 }: SidebarProps) => {
   const [customStep, setCustomStep] = useState<number>(5);
   const [isTableSettingsExpanded, setIsTableSettingsExpanded] = useState<boolean>(false);
+  // Function whose color palette is open (by id, so it survives reordering)
+  const [colorEditorFunctionId, setColorEditorFunctionId] = useState<string | null>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
+  const functionInputRefs = useRef<Array<HTMLInputElement | null>>([]);
+  // "+ Add function" already recorded history; focusing the new input must not record it again
+  const skipFocusHistoryRef = useRef(false);
 
   useEffect(() => {
-    const handleFocus = () => {
-      if (nameInputRef.current) {
-        nameInputRef.current.focus();
-        nameInputRef.current.select();
-      }
+    const handleFocus = (e: Event) => {
+      const functionIndex = (e as CustomEvent<FocusSidebarInputDetail | undefined>).detail?.functionIndex ?? -1;
+      // Wait a frame: the sidebar may still be rendering the newly selected pin
+      requestAnimationFrame(() => {
+        const input = functionIndex >= 0 ? functionInputRefs.current[functionIndex] : nameInputRef.current;
+        input?.focus();
+        input?.select();
+      });
     };
 
     window.addEventListener('focus-sidebar-input', handleFocus);
@@ -92,6 +149,42 @@ export const Sidebar = ({
     if (selectedPin) {
       onUpdatePin({ ...selectedPin, textColor: color });
     }
+  };
+
+  // --- Function labels ---
+  const functions = selectedPin?.functions ?? [];
+
+  const handleAddFunction = () => {
+    if (!selectedPin) return;
+    onUpdatePin(addPinFunction(selectedPin));
+    const newIndex = functions.length;
+    onSelectFunctionIndex(newIndex);
+    requestAnimationFrame(() => {
+      // focus() runs the onFocus handler synchronously, which reads the flag
+      skipFocusHistoryRef.current = true;
+      functionInputRefs.current[newIndex]?.focus();
+      skipFocusHistoryRef.current = false;
+    });
+  };
+
+  const handleFunctionFocus = (index: number) => {
+    onSelectFunctionIndex(index);
+    // One undo step per editing session, like the pin name
+    if (!skipFocusHistoryRef.current) onPushHistory();
+  };
+
+  const handleMoveFunction = (index: number, delta: -1 | 1) => {
+    if (!selectedPin) return;
+    onUpdatePin(movePinFunction(selectedPin, index, delta));
+    if (selectedFunctionIndex === index) onSelectFunctionIndex(index + delta);
+    else if (selectedFunctionIndex === index + delta) onSelectFunctionIndex(index);
+  };
+
+  const handleRemoveFunction = (index: number) => {
+    if (!selectedPin) return;
+    onUpdatePin(removePinFunction(selectedPin, index));
+    if (selectedFunctionIndex === index) onSelectFunctionIndex(-1);
+    else if (selectedFunctionIndex > index) onSelectFunctionIndex(selectedFunctionIndex - 1);
   };
 
   // --- Position Adjustment ---
@@ -360,7 +453,10 @@ export const Sidebar = ({
               className='w-full border border-gray-300 rounded px-2 py-1.5 text-sm outline-none focus:border-blue-500'
               value={selectedPin.text}
               onChange={handleNameChange}
-              onFocus={() => onPushHistory()}
+              onFocus={() => {
+                onSelectFunctionIndex(-1);
+                onPushHistory();
+              }}
             />
           </div>
 
@@ -368,39 +464,7 @@ export const Sidebar = ({
             <label className='block text-sm font-medium text-gray-600 mb-2'>
               Label Color
             </label>
-            <div className='grid grid-cols-4 gap-2'>
-              {COLORS.map((c) => (
-                <div
-                  key={c}
-                  className={`w-8 h-8 rounded cursor-pointer transition-transform hover:scale-110`}
-                  style={{
-                    backgroundColor: c,
-                    boxShadow:
-                      selectedPin.color === c
-                        ? '0 0 0 2px white, 0 0 0 4px gray'
-                        : 'none',
-                  }}
-                  onClick={() => handleColorChange(c)}
-                ></div>
-              ))}
-              <div
-                className={`w-8 h-8 rounded cursor-pointer transition-transform hover:scale-110 relative flex items-center justify-center overflow-hidden`}
-                style={{
-                  background: 'conic-gradient(red, yellow, lime, aqua, blue, magenta, red)',
-                  boxShadow: !COLORS.includes(selectedPin.color)
-                    ? '0 0 0 2px white, 0 0 0 4px gray'
-                    : 'none',
-                }}
-                title="Custom Color"
-              >
-                <input
-                  type="color"
-                  value={selectedPin.color}
-                  onChange={(e) => handleColorChange(e.target.value)}
-                  className="opacity-0 absolute inset-0 w-full h-full cursor-pointer"
-                />
-              </div>
-            </div>
+            <ColorPalette value={selectedPin.color} onChange={handleColorChange} />
           </div>
 
           <div>
@@ -435,6 +499,80 @@ export const Sidebar = ({
               onChange={handlePwmChange}
             />
             <label className='text-sm text-gray-600'>PWM Capable</label>
+          </div>
+
+          <div>
+            <label className='block text-sm font-medium text-gray-600 mb-1'>
+              Functions
+            </label>
+            <p className="text-[10px] text-gray-400 mb-2">
+              Extra labels shown after the pin name, continuing away from the anchor.
+            </p>
+            <div className="space-y-1">
+              {functions.map((fn, index) => (
+                <div key={fn.id}>
+                  <div
+                    className={`flex items-center gap-1 rounded p-0.5 ${
+                      index === selectedFunctionIndex ? 'bg-blue-50 ring-1 ring-blue-400' : ''
+                    }`}
+                  >
+                    <button
+                      onClick={() => setColorEditorFunctionId(id => (id === fn.id ? null : fn.id))}
+                      className="w-6 h-6 rounded shrink-0 border border-black/20"
+                      style={{ backgroundColor: fn.color }}
+                      title="Function color"
+                      aria-label={`Color of ${fn.text || 'function'}`}
+                    />
+                    <input
+                      ref={(el) => { functionInputRefs.current[index] = el; }}
+                      type="text"
+                      value={fn.text}
+                      placeholder="e.g. ADC0"
+                      onChange={(e) => onUpdatePin(renamePinFunction(selectedPin, index, e.target.value), false)}
+                      onFocus={() => handleFunctionFocus(index)}
+                      className="flex-1 min-w-0 border border-gray-300 rounded px-2 py-1 text-xs outline-none focus:border-blue-500"
+                    />
+                    <button
+                      onClick={() => handleMoveFunction(index, -1)}
+                      disabled={index === 0}
+                      className="text-gray-500 hover:text-gray-800 disabled:opacity-30 text-xs px-1"
+                      title="Move closer to the pin name"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      onClick={() => handleMoveFunction(index, 1)}
+                      disabled={index === functions.length - 1}
+                      className="text-gray-500 hover:text-gray-800 disabled:opacity-30 text-xs px-1"
+                      title="Move further out"
+                    >
+                      ↓
+                    </button>
+                    <button
+                      onClick={() => handleRemoveFunction(index)}
+                      className="text-red-500 hover:text-red-700 text-xs px-1"
+                      title="Remove function"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  {colorEditorFunctionId === fn.id && (
+                    <div className="py-2 pl-1">
+                      <ColorPalette
+                        value={fn.color}
+                        onChange={(color) => onUpdatePin(updatePinFunction(selectedPin, index, { color }))}
+                      />
+                    </div>
+                  )}
+                </div>
+              ))}
+              <button
+                onClick={handleAddFunction}
+                className="w-full text-center text-xs text-blue-600 hover:text-blue-800 py-1 font-medium"
+              >
+                + Add function
+              </button>
+            </div>
           </div>
 
           <hr className="my-4 border-gray-300" />

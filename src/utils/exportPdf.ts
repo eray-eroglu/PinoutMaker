@@ -1,6 +1,9 @@
 import Konva from 'konva';
 import type { LegendItem, LineData, PinData } from '../types';
 import type { LoadedImage } from './project';
+import { layoutPinLabels } from './pinLayout';
+import type { MeasureLabel } from './pinLayout';
+import { measureLabelText } from './labelMeasure';
 
 export interface ExportPdfInput {
   images: LoadedImage[];
@@ -10,6 +13,8 @@ export interface ExportPdfInput {
   scale: number;
   /** World size of one label unit. */
   labelScale: number;
+  /** World gap between the labels of a pin's row. */
+  gapSize: number;
   legendItems: LegendItem[];
   isLegendVisible: boolean;
 }
@@ -17,7 +22,10 @@ export interface ExportPdfInput {
 interface Bounds { minX: number; minY: number; maxX: number; maxY: number }
 
 /** World-space bounding box of everything on the board, or null when the board is empty. */
-export const getContentBounds = ({ images, pins, lines, labelScale }: Omit<ExportPdfInput, 'legendItems' | 'isLegendVisible'>): Bounds | null => {
+export const getContentBounds = (
+  { images, pins, lines, labelScale, gapSize }: Omit<ExportPdfInput, 'legendItems' | 'isLegendVisible' | 'scale'>,
+  measure: MeasureLabel = measureLabelText,
+): Bounds | null => {
   const b: Bounds = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
   const include = (x: number, y: number) => {
     b.minX = Math.min(b.minX, x);
@@ -35,11 +43,10 @@ export const getContentBounds = ({ images, pins, lines, labelScale }: Omit<Expor
 
   pins.forEach(p => {
     include(p.targetX, p.targetY);
-    // labelWidth/Height are label units
-    const w = (p.labelWidth || Math.max(60, p.text.length * 8) + 20) * labelScale;
-    const h = (p.labelHeight || 40) * labelScale;
-    include(p.x, p.y);
-    include(p.x + w, p.y + h);
+    // The whole label row, including function labels
+    const { bounds: row } = layoutPinLabels(p, labelScale, gapSize, measure);
+    include(row.x, row.y);
+    include(row.x + row.width, row.y + row.height);
   });
 
   lines.forEach(l => {
