@@ -7,6 +7,8 @@ import { calculateManhattanPath } from '../utils/lineUtils';
 interface LineComponentProps {
   line: LineData;
   scale: number;
+  /** World size of one label unit; line thickness is expressed in label units. */
+  labelScale: number;
   isSelected: boolean;
   onSelect: (
     id: string,
@@ -42,6 +44,7 @@ function buildOrthogonalPoints(anchors: number[]): number[] {
 export const LineComponent: React.FC<LineComponentProps> = ({
   line,
   scale,
+  labelScale,
   isSelected,
   onSelect,
   onUpdate,
@@ -96,8 +99,9 @@ export const LineComponent: React.FC<LineComponentProps> = ({
         ref={lineRef}
         points={buildOrthogonalPoints(anchors)}
         stroke={line.color}
-        strokeWidth={line.thickness / scale}
-        hitStrokeWidth={Math.max(15 / scale, line.thickness / scale)}
+        // Thickness scales with the board, like labels; the hit area stays finger-sized on screen
+        strokeWidth={line.thickness * labelScale}
+        hitStrokeWidth={Math.max(15 / scale, line.thickness * labelScale)}
         onClick={handleSelect}
         onTap={handleSelect}
         lineCap="round"

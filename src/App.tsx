@@ -7,12 +7,12 @@ import { ProductLibrary } from './components/ProductLibrary';
 import type { Product } from './components/ProductLibrary';
 import type { PinData, LineData, LegendItem } from './types';
 import { DEFAULT_ANCHOR_SIZE, DEFAULT_GAP_SIZE, DEFAULT_LEGEND_ITEMS } from './constants';
-import { DEFAULT_PIN_COLOR } from './utils/pinUtils';
+import { DEFAULT_PIN_COLOR, scaleLabelsAroundAnchors } from './utils/pinUtils';
 import { loadImageElement, loadProjectImages, parseProject, serializeProject } from './utils/project';
 import type { LoadedImage } from './utils/project';
 import { exportPdf } from './utils/exportPdf';
 
-type HistoryState = { pins: PinData[]; lines: LineData[]; images: LoadedImage[] };
+type HistoryState = { pins: PinData[]; lines: LineData[]; images: LoadedImage[]; labelScale: number | null };
 
 const PROJECT_FILE_TYPES = [{ description: 'JSON Files', accept: { 'application/json': ['.json'] } }];
 
@@ -42,6 +42,16 @@ function App() {
   const [scale, setScale] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
 
+  // World size of one label unit. Labels zoom together with the board, so the layout never
+  // shifts. It is fixed when the first pin or line is created, using the zoom at that moment,
+  // so labels start out at a comfortable on-screen size; the sidebar can change it later.
+  const [labelScale, setLabelScale] = useState<number | null>(null);
+  const effectiveLabelScale = labelScale ?? 1 / scale;
+  const fixLabelScale = () => {
+    if (labelScale === null) setLabelScale(effectiveLabelScale);
+    return effectiveLabelScale;
+  };
+
   const stageRef = useRef<Konva.Stage>(null);
   const copiedPinRef = useRef<PinData | null>(null); // For Ctrl+C/V
   const copiedLineRef = useRef<LineData | null>(null); // For Ctrl+C/V
@@ -55,12 +65,14 @@ function App() {
     pins: pins.map(p => ({ ...p })),
     lines: lines.map(l => ({ ...l })),
     images: images.map(i => ({ ...i })),
+    labelScale,
   });
 
   const restore = (state: HistoryState) => {
     setPins(state.pins);
     setLines(state.lines);
     setImages(state.images);
+    setLabelScale(state.labelScale);
   };
 
   const pushHistory = () => {
@@ -163,17 +175,14 @@ function App() {
 
   // --- Pins & lines ---
   const createPinAt = (x: number, y: number) => {
-    // Click position is the anchor; the label sits 50px right, vertically centered (screen pixels).
-    const labelDx = 50;
-    const labelDy = -13;
+    // Click position is the anchor; the label sits 50 label units right, vertically centered.
+    const ls = fixLabelScale();
     const newPin: PinData = {
       id: crypto.randomUUID(),
-      x: x + labelDx / scale,
-      y: y + labelDy / scale,
+      x: x + 50 * ls,
+      y: y - 13 * ls,
       targetX: x,
       targetY: y,
-      labelDx,
-      labelDy,
       text: 'New Pin',
       color: DEFAULT_PIN_COLOR,
       isPwm: false,
@@ -186,6 +195,7 @@ function App() {
   };
 
   const createLineAt = (points: number[]) => {
+    fixLabelScale();
     const newLine: LineData = {
       id: crypto.randomUUID(),
       points,
@@ -202,6 +212,15 @@ function App() {
   const updatePin = (updatedPin: PinData, saveHistory = true) => {
     if (saveHistory) pushHistory();
     setPins(prev => prev.map(pin => (pin.id === updatedPin.id ? updatedPin : pin)));
+  };
+
+  /** Resizes all labels; their offsets from the anchors scale too, so the layout keeps its shape. */
+  const changeLabelScale = (next: number, saveHistory = true) => {
+    if (!(next > 0)) return;
+    if (saveHistory) pushHistory();
+    const ratio = next / effectiveLabelScale;
+    setPins(prev => scaleLabelsAroundAnchors(prev, ratio));
+    setLabelScale(next);
   };
 
   const updateLine = (updatedLine: LineData, saveHistory = true) => {
@@ -295,7 +314,7 @@ function App() {
   // --- Save / load ---
   const getProjectJson = () =>
     JSON.stringify(
-      serializeProject({ images, pins, lines, scale, position, gapSize, legendItems, isLegendVisible, anchorSize }),
+      serializeProject({ images, pins, lines, scale, position, gapSize, legendItems, isLegendVisible, anchorSize, labelScale }),
       null,
       2,
     );
@@ -393,6 +412,7 @@ function App() {
     setLegendItems(data.legendItems);
     setIsLegendVisible(data.isLegendVisible);
     setAnchorSize(data.anchorSize);
+    setLabelScale(data.labelScale);
 
     const { loaded, failed } = await loadProjectImages(data.images);
     setImages(loaded);
@@ -408,7 +428,7 @@ function App() {
     clearSelection();
     await nextFrame();
     try {
-      const exported = await exportPdf(stage, { images, pins, lines, scale, legendItems, isLegendVisible });
+      const exported = await exportPdf(stage, { images, pins, lines, scale, labelScale: effectiveLabelScale, legendItems, isLegendVisible });
       if (!exported) alert('Nothing to export!');
     } catch (e) {
       console.error('PDF Export failed', e);
@@ -502,6 +522,7 @@ function App() {
           legendItems={legendItems}
           isLegendVisible={isLegendVisible}
           anchorSize={anchorSize}
+          labelScale={effectiveLabelScale}
           onPushHistory={pushHistory}
         />
         <Sidebar
@@ -512,7 +533,6 @@ function App() {
           selectedImage={selectedImage}
           onUpdateImage={updateImage}
           onPushHistory={pushHistory}
-          scale={scale}
           gapSize={gapSize}
           onGapSizeChange={setGapSize}
           legendItems={legendItems}
@@ -521,6 +541,8 @@ function App() {
           onLegendVisibilityChange={setIsLegendVisible}
           anchorSize={anchorSize}
           onAnchorSizeChange={setAnchorSize}
+          labelScale={effectiveLabelScale}
+          onLabelScaleChange={changeLabelScale}
         />
       </div>
     </div>

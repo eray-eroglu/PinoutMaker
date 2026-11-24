@@ -12,7 +12,6 @@ interface SidebarProps {
   selectedLine: LineData | null;
   onUpdateLine: (line: LineData, saveHistory?: boolean) => void;
   onPushHistory: () => void;
-  scale: number;
   gapSize: number;
   onGapSizeChange: (size: number) => void;
   legendItems: LegendItem[];
@@ -21,6 +20,9 @@ interface SidebarProps {
   onLegendVisibilityChange: (visible: boolean) => void;
   anchorSize: number;
   onAnchorSizeChange: (size: number) => void;
+  /** World size of one label unit. */
+  labelScale: number;
+  onLabelScaleChange: (labelScale: number) => void;
 }
 
 const COLORS = [
@@ -43,8 +45,9 @@ const COLORS = [
 export const Sidebar = ({
   selectedPin, onUpdatePin, selectedImage, onUpdateImage, 
   selectedLine, onUpdateLine,
-  onPushHistory, scale, gapSize, onGapSizeChange,
-  legendItems, onLegendItemsChange, isLegendVisible, onLegendVisibilityChange, anchorSize, onAnchorSizeChange
+  onPushHistory, gapSize, onGapSizeChange,
+  legendItems, onLegendItemsChange, isLegendVisible, onLegendVisibilityChange, anchorSize, onAnchorSizeChange,
+  labelScale, onLabelScaleChange,
 }: SidebarProps) => {
   const [customStep, setCustomStep] = useState<number>(5);
   const [isTableSettingsExpanded, setIsTableSettingsExpanded] = useState<boolean>(false);
@@ -92,9 +95,9 @@ export const Sidebar = ({
   };
 
   // --- Position Adjustment ---
-  // Steps are screen pixels, matching how label offsets are stored (labelDx/labelDy).
+  // Steps are board-image pixels, the same units as every position on the board.
   const nudge = (dx: number, dy: number) => {
-    if (selectedPin) onUpdatePin(nudgeLabel(selectedPin, dx, dy, scale));
+    if (selectedPin) onUpdatePin(nudgeLabel(selectedPin, dx, dy));
   };
   const handleMoveLeft = (px: number) => nudge(-px, 0);
   const handleMoveRight = (px: number) => nudge(px, 0);
@@ -128,6 +131,30 @@ export const Sidebar = ({
           />
           <span className="text-xs text-gray-500">Distance between pins</span>
         </div>
+      </div>
+
+      <div className="mb-6">
+        <label className='block text-sm font-medium text-gray-600 mb-2'>
+          Label Size
+        </label>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => onLabelScaleChange(labelScale / 1.1)}
+            className="w-8 h-7 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded text-sm font-bold"
+            title="Smaller labels"
+          >
+            −
+          </button>
+          <span className="w-14 text-center text-sm text-gray-700 tabular-nums">{Math.round(labelScale * 100)}%</span>
+          <button
+            onClick={() => onLabelScaleChange(labelScale * 1.1)}
+            className="w-8 h-7 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded text-sm font-bold"
+            title="Larger labels"
+          >
+            +
+          </button>
+        </div>
+        <p className="text-[10px] text-gray-400 mt-1">Labels zoom with the board. Resizing keeps their spacing proportional.</p>
       </div>
 
       <div className="mb-6">

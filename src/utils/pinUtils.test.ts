@@ -1,31 +1,36 @@
 import { describe, it, expect } from 'vitest';
 import type { PinData } from '../types';
-import { DEFAULT_PIN_COLOR, getColorForRename, getLabelPosition, getSmartColor, nudgeLabel } from './pinUtils';
+import { DEFAULT_PIN_COLOR, getColorForRename, getSmartColor, migrateLegacyPin, nudgeLabel, scaleLabelsAroundAnchors } from './pinUtils';
 
 const basePin: PinData = {
   id: 'p', x: 0, y: 0, targetX: 100, targetY: 100, text: 'New Pin', color: DEFAULT_PIN_COLOR, isPwm: false,
 };
 
-describe('getLabelPosition', () => {
-  it('uses the screen-pixel offset, so the world distance shrinks when zoomed in', () => {
-    const pin = { ...basePin, labelDx: 50, labelDy: -10 };
-    expect(getLabelPosition(pin, 1)).toEqual({ x: 150, y: 90 });
-    expect(getLabelPosition(pin, 2)).toEqual({ x: 125, y: 95 });
-  });
-
-  it('falls back to legacy x/y when no offset is stored', () => {
-    expect(getLabelPosition({ ...basePin, x: 7, y: 8 }, 3)).toEqual({ x: 7, y: 8 });
+describe('nudgeLabel', () => {
+  it('moves the label in world units and leaves the anchor', () => {
+    const moved = nudgeLabel({ ...basePin, x: 150, y: 90 }, 10, -5);
+    expect(moved).toMatchObject({ x: 160, y: 85, targetX: 100, targetY: 100 });
   });
 });
 
-describe('nudgeLabel', () => {
-  it('moves from where the label is drawn, not from the stale legacy x', () => {
-    // x is stale (saved at a different zoom); drawn position at scale 2 is 100 + 50/2 = 125
-    const pin = { ...basePin, x: 999, labelDx: 50, labelDy: 0 };
-    const moved = nudgeLabel(pin, 10, 0, 2);
-    expect(moved.labelDx).toBe(60);
-    expect(getLabelPosition(moved, 2).x).toBe(130);
-    expect(moved.x).toBe(130); // legacy field kept in sync
+describe('scaleLabelsAroundAnchors', () => {
+  it('scales each label offset from its own anchor', () => {
+    const [p] = scaleLabelsAroundAnchors([{ ...basePin, x: 150, y: 90 }], 2);
+    expect(p).toMatchObject({ x: 200, y: 80, targetX: 100, targetY: 100 });
+  });
+});
+
+describe('migrateLegacyPin', () => {
+  it('freezes a screen-pixel offset at the zoom the file was saved with', () => {
+    // At zoom 0.5 an offset of 50 screen px was 100 world px
+    const pin = migrateLegacyPin({ ...basePin, x: 999, y: 999, labelDx: 50, labelDy: -10 }, 0.5);
+    expect(pin).toMatchObject({ x: 200, y: 80 });
+    expect(pin.labelDx).toBeUndefined();
+    expect(pin.labelDy).toBeUndefined();
+  });
+
+  it('keeps x/y of very old pins that never had an offset', () => {
+    expect(migrateLegacyPin({ ...basePin, x: 7, y: 8 }, 0.5)).toMatchObject({ x: 7, y: 8 });
   });
 });
 

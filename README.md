@@ -77,7 +77,9 @@ src/
     lineUtils.ts          Manhattan paths and PWM waves
 ```
 
-Label positions are stored as a **screen-pixel offset** from the anchor (`labelDx`/`labelDy`), so
-labels keep a constant on-screen size and distance at every zoom level. Always use
-`getLabelPosition()` to get a label's world position; the legacy `x`/`y` fields are only kept in
-sync for old project files.
+All positions are stored in **world coordinates** (board-image pixels): `pin.x/pin.y` is the
+label's top-left corner, `targetX/targetY` its anchor. Labels, anchors, leader lines and drawn lines
+are sized by the project-wide `labelScale`, so zooming scales the board and its labels together and
+the layout never shifts. `labelScale` is fixed from the current zoom when the first pin or line is
+created, and can be changed with *Label Size* in the sidebar. Older project files (which stored
+zoom-dependent screen-pixel offsets) are converted on load, frozen at the zoom they were saved with.

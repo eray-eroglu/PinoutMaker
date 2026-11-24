@@ -31,6 +31,28 @@ describe('parseProject', () => {
     expect(parseProject(JSON.stringify({ pins: [], scale: 1, position: { x: 0, y: 0 }, gapSize: 0 })).gapSize).toBe(0);
   });
 
+  it('freezes legacy zoom-dependent labels at the zoom the file was saved with', () => {
+    const p = parseProject(JSON.stringify({
+      scale: 0.42, position: { x: 0, y: 0 },
+      pins: [{ id: 'a', x: 0, y: 0, targetX: 100, targetY: 100, labelDx: 42, labelDy: -21, text: 'PA0', color: '#000', isPwm: false }],
+    }));
+    expect(p.labelScale).toBeCloseTo(1 / 0.42);
+    expect(p.pins[0].x).toBeCloseTo(200);
+    expect(p.pins[0].y).toBeCloseTo(50);
+    expect(p.pins[0].labelDx).toBeUndefined();
+  });
+
+  it('leaves labelScale unset for an empty legacy project', () => {
+    expect(parseProject(JSON.stringify({ pins: [], scale: 0.5, position: { x: 0, y: 0 } })).labelScale).toBeNull();
+  });
+
+  it('does not touch pins of files that already have labelScale', () => {
+    const pin = { id: 'a', x: 5, y: 6, targetX: 0, targetY: 0, text: 'X', color: '#000', isPwm: false };
+    const p = parseProject(JSON.stringify({ scale: 0.3, position: { x: 0, y: 0 }, labelScale: 2, pins: [pin] }));
+    expect(p.labelScale).toBe(2);
+    expect(p.pins[0]).toEqual(pin);
+  });
+
   it('throws on invalid JSON', () => {
     expect(() => parseProject('not json')).toThrow();
   });
@@ -42,7 +64,7 @@ describe('serializeProject', () => {
     const data = serializeProject({
       images: [{ id: 'i', src: 's', x: 1, y: 2, width: 3, height: 4, rotation: 0, element } as never],
       pins: [], lines: [], scale: 1, position: { x: 0, y: 0 }, gapSize: 12,
-      legendItems: [], isLegendVisible: true, anchorSize: 5,
+      legendItems: [], isLegendVisible: true, anchorSize: 5, labelScale: null,
     });
     expect(data.images?.[0]).toEqual({ id: 'i', src: 's', x: 1, y: 2, width: 3, height: 4, rotation: 0 });
   });

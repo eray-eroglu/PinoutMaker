@@ -4,11 +4,11 @@ import Konva from 'konva';
 import type { PinData } from '../types';
 import { calculateManhattanPath, calculateWavePoints } from '../utils/lineUtils';
 import { isLightColor } from '../utils/colorUtils';
-import { getLabelPosition } from '../utils/pinUtils';
 
 interface PinComponentProps {
   pin: PinData;
-  scale: number;
+  /** World size of one label unit (project-wide). Labels, anchor and leader line scale with it. */
+  labelScale: number;
   isSelected: boolean;
   onSelect: (
     id: string,
@@ -23,7 +23,7 @@ interface PinComponentProps {
 
 export const PinComponent: React.FC<PinComponentProps> = ({
   pin,
-  scale,
+  labelScale,
   isSelected,
   onSelect,
   onUpdate,
@@ -37,33 +37,13 @@ export const PinComponent: React.FC<PinComponentProps> = ({
   const lineRef = useRef<Konva.Line>(null);
   const lastClickTimeRef = useRef(0);
 
-  const invScale = 1 / scale;
-
-  // AUTO-MIGRATION & WIDTH CALCULATION:
-  // If pin lacks labelDx/labelDy, calculate them now based on current x,y and scale.
-  // Also save the rendered width/height so CanvasStage can use it for right-edge alignment.
+  // Store the measured label size (label units) so CanvasStage can snap to label edges.
   const syncLabelMetrics = useEffectEvent(() => {
-    let needsUpdate = false;
-    const updates: Partial<PinData> = {};
-
-    if (pin.labelDx === undefined || pin.labelDy === undefined) {
-      updates.labelDx = (pin.x - pin.targetX) * scale;
-      updates.labelDy = (pin.y - pin.targetY) * scale;
-      needsUpdate = true;
-    }
-
-    if (labelRef.current) {
-      const w = labelRef.current.width();
-      const h = labelRef.current.height();
-      if (pin.labelWidth !== w || pin.labelHeight !== h) {
-        updates.labelWidth = w;
-        updates.labelHeight = h;
-        needsUpdate = true;
-      }
-    }
-
-    if (needsUpdate) {
-      onUpdate({ ...pin, ...updates }, false);
+    if (!labelRef.current) return;
+    const w = labelRef.current.width();
+    const h = labelRef.current.height();
+    if (pin.labelWidth !== w || pin.labelHeight !== h) {
+      onUpdate({ ...pin, labelWidth: w, labelHeight: h }, false);
     }
   });
 
@@ -71,8 +51,6 @@ export const PinComponent: React.FC<PinComponentProps> = ({
   useEffect(() => {
     syncLabelMetrics();
   }, [pin.text]);
-
-  const { x: currentLabelX, y: currentLabelY } = getLabelPosition(pin, scale);
 
   const updateLine = React.useCallback(() => {
     if (labelRef.current && anchorRef.current && lineRef.current) {
@@ -100,7 +78,8 @@ export const PinComponent: React.FC<PinComponentProps> = ({
 
       // PWM Wave Effect
       if (pin.isPwm) {
-        points = calculateWavePoints(points, scale);
+        // The wave helper sizes the wave as 1/scale; pass 1/labelScale so it scales with the label
+        points = calculateWavePoints(points, 1 / labelScale);
       }
       
       lineRef.current.points(points);
@@ -108,12 +87,12 @@ export const PinComponent: React.FC<PinComponentProps> = ({
       // Force a layer redraw (prevents flickering and position drift)
       lineRef.current.getLayer()?.batchDraw(); 
     }
-  }, [pin.isPwm, scale]); // Note: We read positions from refs directly (labelNode.x()) which is updated by Konva during drag.
+  }, [pin.isPwm, labelScale]); // Note: We read positions from refs directly (labelNode.x()) which is updated by Konva during drag.
                           // However, for initial render or props change, we need to trigger it.
 
   useLayoutEffect(() => {
     updateLine();
-  }, [currentLabelX, currentLabelY, pin.targetX, pin.targetY, pin.text, scale, pin.isPwm, updateLine]);
+  }, [pin.x, pin.y, pin.targetX, pin.targetY, pin.text, labelScale, pin.isPwm, updateLine]);
 
 
   const handleDragMove = (e: Konva.KonvaEventObject<DragEvent>) => {
@@ -138,44 +117,27 @@ export const PinComponent: React.FC<PinComponentProps> = ({
   };
 
   const handleLabelDragEnd = (e: Konva.KonvaEventObject<DragEvent>) => {
-    const newX = e.target.x();
-    const newY = e.target.y();
-    
     if (onDragEnd) onDragEnd(); // Clear guides
-    
-    // Calculate new visual offset based on drop position
-    const newDx = (newX - pin.targetX) * scale;
-    const newDy = (newY - pin.targetY) * scale;
-
-    // Save the rendered width and height so CanvasStage can use it for right-edge alignment
-    const width = labelRef.current?.width() || 0;
-    const height = labelRef.current?.height() || 0;
-
     onUpdate({
       ...pin,
-      x: newX, // Keep legacy synced just in case
-      y: newY,
-      labelDx: newDx,
-      labelDy: newDy,
-      labelWidth: width,
-      labelHeight: height
+      x: e.target.x(),
+      y: e.target.y(),
+      // Keep the measured size so CanvasStage can align right edges
+      labelWidth: labelRef.current?.width() || pin.labelWidth,
+      labelHeight: labelRef.current?.height() || pin.labelHeight,
     }, true);
   };
 
   const handleAnchorDragEnd = (e: Konva.KonvaEventObject<DragEvent>) => {
-    const newTargetX = e.target.x();
-    const newTargetY = e.target.y();
-    
-    // When anchor moves, update everything
-    const newLabelX = newTargetX + (pin.labelDx ?? 0) / scale;
-    const newLabelY = newTargetY + (pin.labelDy ?? 0) / scale;
-
+    // The label moves with its anchor
+    const dx = e.target.x() - pin.targetX;
+    const dy = e.target.y() - pin.targetY;
     onUpdate({
       ...pin,
-      targetX: newTargetX,
-      targetY: newTargetY,
-      x: newLabelX,
-      y: newLabelY
+      targetX: pin.targetX + dx,
+      targetY: pin.targetY + dy,
+      x: pin.x + dx,
+      y: pin.y + dy,
     }, true);
   };
 
@@ -202,8 +164,7 @@ export const PinComponent: React.FC<PinComponentProps> = ({
         ref={lineRef}
         // Points are set via ref in updateLine
         stroke={pin.color}
-        strokeWidth={2}
-        strokeScaleEnabled={false}
+        strokeWidth={2 * labelScale}
         listening={false}
       />
 
@@ -214,8 +175,8 @@ export const PinComponent: React.FC<PinComponentProps> = ({
         radius={Math.max(0.1, anchorSize)}
         fill={anchorSize === 0 ? 'transparent' : pin.color}
         draggable
-        scaleX={invScale}
-        scaleY={invScale}
+        scaleX={labelScale}
+        scaleY={labelScale}
         onDragMove={updateLine}
         onDragEnd={handleAnchorDragEnd}
         onClick={handleSelect}
@@ -228,11 +189,11 @@ export const PinComponent: React.FC<PinComponentProps> = ({
 
       <Label
         ref={labelRef}
-        x={currentLabelX}
-        y={currentLabelY}
+        x={pin.x}
+        y={pin.y}
         draggable
-        scaleX={invScale}
-        scaleY={invScale}
+        scaleX={labelScale}
+        scaleY={labelScale}
         onDragMove={handleDragMove}
         onDragEnd={handleLabelDragEnd}
         onClick={handleSelect}

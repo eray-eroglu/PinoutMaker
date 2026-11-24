@@ -6,7 +6,6 @@ import type { LoadedImage } from '../utils/project';
 import { PinComponent } from './PinComponent';
 import { LineComponent } from './LineComponent';
 import { calculateManhattanPath } from '../utils/lineUtils';
-import { getLabelPosition } from '../utils/pinUtils';
 import { computeResize, getHandlePosition } from '../utils/imageResize';
 import type { ResizeAnchor } from '../utils/imageResize';
 
@@ -36,6 +35,8 @@ interface CanvasStageProps {
   legendItems: LegendItem[];
   isLegendVisible: boolean;
   anchorSize: number;
+  /** World size of one label unit; see PinData. */
+  labelScale: number;
   /** Records an undo snapshot; called before a drag starts. */
   onPushHistory: () => void;
 }
@@ -66,6 +67,7 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
   legendItems,
   isLegendVisible,
   anchorSize,
+  labelScale,
   onPushHistory,
 }, ref) => {
 
@@ -257,17 +259,15 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
     // Determine if the pin is on the left side of its anchor
     const isLeftSide = x < currentPin.targetX;
     
-    // Convert unscaled (screen-pixel) label size to world coordinates for current pin
-    const currentWorldWidth = (currentPin.labelWidth || 60) / scale;
-    const currentWorldHeight = (currentPin.labelHeight || 26) / scale;
+    // Label sizes are stored in label units; convert to world coordinates
+    const currentWorldWidth = (currentPin.labelWidth || 60) * labelScale;
+    const currentWorldHeight = (currentPin.labelHeight || 26) * labelScale;
 
     // 1. Standard Alignment (Snap to common existing X or Y)
-    pins.forEach(pin => {
-        if (pin.id === id) return;
-        // Use where the other label is actually drawn at the current zoom, not the stale legacy x/y
-        const otherPin = { ...pin, ...getLabelPosition(pin, scale) };
+    pins.forEach(otherPin => {
+        if (otherPin.id === id) return;
 
-        const otherWorldWidth = (otherPin.labelWidth || 60) / scale;
+        const otherWorldWidth = (otherPin.labelWidth || 60) * labelScale;
         const otherLeftEdge = otherPin.x;
         const otherRightEdge = otherPin.x + otherWorldWidth;
 
@@ -328,8 +328,8 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
             // If we have the widths saved in the pin data (we added this to types.ts earlier)
             if (currentPin.labelWidth && otherPin.labelWidth) {
                 // Convert unscaled labelWidth to world coordinates
-                const currentWorldWidth = currentPin.labelWidth / scale;
-                const otherWorldWidth = otherPin.labelWidth / scale;
+                const currentWorldWidth = currentPin.labelWidth * labelScale;
+                const otherWorldWidth = otherPin.labelWidth * labelScale;
 
                 const currentRightEdge = x + currentWorldWidth;
                 const otherRightEdge = otherPin.x + otherWorldWidth;
@@ -529,7 +529,7 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
             <PinComponent
               key={pin.id}
               pin={pin}
-              scale={scale}
+              labelScale={labelScale}
               isSelected={pin.id === selectedPinId}
               onSelect={(id) => {
                 onSelectPin(id);
@@ -548,6 +548,7 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
               key={line.id}
               line={line}
               scale={scale}
+              labelScale={labelScale}
               isSelected={line.id === selectedLineId}
               onSelect={(id) => {
                 if (onSelectLine) onSelectLine(id);
@@ -618,7 +619,7 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
                   <Line
                     points={confirmedPts}
                     stroke="#1f2937"
-                    strokeWidth={2 / scale}
+                    strokeWidth={2 * labelScale}
                     lineCap="round"
                     lineJoin="round"
                     listening={false}
@@ -628,7 +629,7 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
                 <Line
                   points={previewPts}
                   stroke="#1f2937"
-                  strokeWidth={2 / scale}
+                  strokeWidth={2 * labelScale}
                   lineCap="round"
                   lineJoin="round"
                   listening={false}

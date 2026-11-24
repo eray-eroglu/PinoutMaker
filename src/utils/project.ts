@@ -1,5 +1,6 @@
 import type { BoardImage, LegendItem, LineData, PinData, ProjectData } from '../types';
 import { DEFAULT_ANCHOR_SIZE, DEFAULT_GAP_SIZE, DEFAULT_LEGEND_ITEMS } from '../constants';
+import { migrateLegacyPin } from './pinUtils';
 
 export interface LoadedImage extends BoardImage {
   element: HTMLImageElement;
@@ -15,6 +16,8 @@ export interface ProjectState {
   legendItems: LegendItem[];
   isLegendVisible: boolean;
   anchorSize: number;
+  /** World size of one label unit; null until the first pin or line fixes it. */
+  labelScale: number | null;
 }
 
 /** Builds the JSON-serialisable project (drops the runtime HTMLImageElement). */
@@ -28,6 +31,7 @@ export const serializeProject = (state: ProjectState): ProjectData => ({
   legendItems: state.legendItems,
   isLegendVisible: state.isLegendVisible,
   anchorSize: state.anchorSize,
+  ...(state.labelScale !== null ? { labelScale: state.labelScale } : {}),
 });
 
 export interface ParsedProject extends Omit<ProjectState, 'images'> {
@@ -44,6 +48,15 @@ export const parseProject = (content: string): ParsedProject => {
     ? [{ id: crypto.randomUUID(), src: data.image, x: 0, y: 0, rotation: data.rotation || 0 }]
     : (data.images ?? []);
 
+  const savedScale = data.scale || 1;
+  const pins = data.pins ?? [];
+
+  // Files without labelScale drew labels and lines at 1/zoom. Freeze them as they looked
+  // at the zoom the file was saved with.
+  const isLegacy = data.labelScale === undefined;
+  const hasContent = pins.length > 0 || (data.lines?.length ?? 0) > 0;
+  const labelScale = data.labelScale ?? (hasContent ? 1 / savedScale : null);
+
   // Legacy lines used x1/y1/x2/y2 instead of points[]
   const lines = (data.lines ?? []).map((l): LineData => {
     if (!l.points || l.points.length === 0) {
@@ -54,14 +67,15 @@ export const parseProject = (content: string): ParsedProject => {
 
   return {
     images,
-    pins: data.pins ?? [],
+    pins: isLegacy ? pins.map(p => migrateLegacyPin(p, savedScale)) : pins,
     lines,
-    scale: data.scale || 1,
+    scale: savedScale,
     position: data.position ?? { x: 0, y: 0 },
     gapSize: data.gapSize ?? DEFAULT_GAP_SIZE,
     legendItems: data.legendItems && data.legendItems.length > 0 ? data.legendItems : DEFAULT_LEGEND_ITEMS.map(i => ({ ...i })),
     isLegendVisible: data.isLegendVisible ?? true,
     anchorSize: data.anchorSize ?? DEFAULT_ANCHOR_SIZE,
+    labelScale,
   };
 };
 

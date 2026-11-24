@@ -1,13 +1,18 @@
 export interface PinData {
   id: string;
-  x: number; // Deprecated, kept for legacy migration
-  y: number; // Deprecated, kept for legacy migration
+  /** World position (board-image pixels) of the label's top-left corner. */
+  x: number;
+  y: number;
+  /** World position of the anchor dot. */
   targetX: number;
   targetY: number;
-  labelDx?: number; // Visual offset X (screen pixels)
-  labelDy?: number; // Visual offset Y (screen pixels)
-  labelWidth?: number; // Width of the label in world coordinates
-  labelHeight?: number; // Height of the label in world coordinates
+  /** @deprecated Screen-pixel label offset used by older files; converted to x/y on load. */
+  labelDx?: number;
+  /** @deprecated See labelDx. */
+  labelDy?: number;
+  /** Measured label size in label units (multiply by the project's labelScale for world size). */
+  labelWidth?: number;
+  labelHeight?: number;
   text: string;
   color: string;
   textColor?: string;
@@ -56,5 +61,10 @@ export interface ProjectData {
   legendItems?: LegendItem[];
   isLegendVisible?: boolean;
   anchorSize?: number;
+  /**
+   * World size of one label unit. Labels, anchors, leader lines and drawn lines are
+   * multiplied by it, so they zoom together with the board. Missing in older files.
+   */
+  labelScale?: number;
 }
 

@@ -1,14 +1,15 @@
 import Konva from 'konva';
 import type { LegendItem, LineData, PinData } from '../types';
 import type { LoadedImage } from './project';
-import { getLabelPosition } from './pinUtils';
 
 export interface ExportPdfInput {
   images: LoadedImage[];
   pins: PinData[];
   lines: LineData[];
-  /** Current editor zoom; labels are drawn at 1/scale so their world size depends on it. */
+  /** Current editor zoom (only used for the screen-sized padding). */
   scale: number;
+  /** World size of one label unit. */
+  labelScale: number;
   legendItems: LegendItem[];
   isLegendVisible: boolean;
 }
@@ -16,7 +17,7 @@ export interface ExportPdfInput {
 interface Bounds { minX: number; minY: number; maxX: number; maxY: number }
 
 /** World-space bounding box of everything on the board, or null when the board is empty. */
-export const getContentBounds = ({ images, pins, lines, scale }: Omit<ExportPdfInput, 'legendItems' | 'isLegendVisible'>): Bounds | null => {
+export const getContentBounds = ({ images, pins, lines, labelScale }: Omit<ExportPdfInput, 'legendItems' | 'isLegendVisible'>): Bounds | null => {
   const b: Bounds = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
   const include = (x: number, y: number) => {
     b.minX = Math.min(b.minX, x);
@@ -34,12 +35,11 @@ export const getContentBounds = ({ images, pins, lines, scale }: Omit<ExportPdfI
 
   pins.forEach(p => {
     include(p.targetX, p.targetY);
-    // labelWidth/Height are screen pixels (labels are drawn at 1/scale)
-    const w = (p.labelWidth || Math.max(60, p.text.length * 8) + 20) / scale;
-    const h = (p.labelHeight || 40) / scale;
-    const label = getLabelPosition(p, scale);
-    include(label.x, label.y);
-    include(label.x + w, label.y + h);
+    // labelWidth/Height are label units
+    const w = (p.labelWidth || Math.max(60, p.text.length * 8) + 20) * labelScale;
+    const h = (p.labelHeight || 40) * labelScale;
+    include(p.x, p.y);
+    include(p.x + w, p.y + h);
   });
 
   lines.forEach(l => {

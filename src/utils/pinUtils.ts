@@ -3,39 +3,43 @@ import type { PinData } from '../types';
 export const DEFAULT_PIN_COLOR = '#ef4444'; // red-500
 
 /**
- * World-space top-left position of a pin's label.
- *
- * Labels are stored as a screen-pixel offset from their anchor (labelDx/labelDy)
- * so they keep a constant on-screen distance at every zoom level. Older pins only
- * have the legacy world-space x/y, which is used as a fallback.
- *
- * Everything that needs the label position (rendering, snapping, nudging, export)
- * must go through this function; reading pin.x/pin.y directly is stale after zooming.
+ * Coordinate model
+ * ----------------
+ * Everything on the board lives in world coordinates (board-image pixels): pin.x/pin.y is the
+ * label's top-left corner, pin.targetX/targetY the anchor. Labels are drawn at the project-wide
+ * `labelScale`, so zooming scales the board and its labels together and the layout never shifts.
  */
-export const getLabelPosition = (pin: PinData, scale: number): { x: number; y: number } => {
-  if (pin.labelDx !== undefined && pin.labelDy !== undefined) {
-    return {
-      x: pin.targetX + pin.labelDx / scale,
-      y: pin.targetY + pin.labelDy / scale,
-    };
-  }
-  return { x: pin.x, y: pin.y };
-};
+
+/** Returns a copy of the pin with its label moved by the given world offset. */
+export const nudgeLabel = (pin: PinData, dx: number, dy: number): PinData => ({
+  ...pin,
+  x: pin.x + dx,
+  y: pin.y + dy,
+});
 
 /**
- * Returns a copy of the pin with its label shifted by the given amount of screen pixels.
- * Keeps the legacy x/y fields in sync with the new offset.
+ * Resizes all labels by `ratio`: each label's offset from its anchor scales with it,
+ * so the layout keeps its proportions instead of labels growing into each other.
  */
-export const nudgeLabel = (pin: PinData, dxScreen: number, dyScreen: number, scale: number): PinData => {
-  const current = getLabelPosition(pin, scale);
-  const labelDx = (current.x - pin.targetX) * scale + dxScreen;
-  const labelDy = (current.y - pin.targetY) * scale + dyScreen;
+export const scaleLabelsAroundAnchors = (pins: PinData[], ratio: number): PinData[] =>
+  pins.map(p => ({
+    ...p,
+    x: p.targetX + (p.x - p.targetX) * ratio,
+    y: p.targetY + (p.y - p.targetY) * ratio,
+  }));
+
+/**
+ * Converts a pin from older files. Those stored the label as a screen-pixel offset from the
+ * anchor (labelDx/labelDy) and drew it at 1/zoom, so its world position depended on the zoom.
+ * We freeze it the way it looked at the zoom the file was saved with.
+ */
+export const migrateLegacyPin = (pin: PinData, savedScale: number): PinData => {
+  const { labelDx, labelDy, ...rest } = pin;
+  if (labelDx === undefined || labelDy === undefined) return rest;
   return {
-    ...pin,
-    labelDx,
-    labelDy,
-    x: pin.targetX + labelDx / scale,
-    y: pin.targetY + labelDy / scale,
+    ...rest,
+    x: pin.targetX + labelDx / savedScale,
+    y: pin.targetY + labelDy / savedScale,
   };
 };
 
