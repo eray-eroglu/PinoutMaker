@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { parseProject, serializeProject } from './project';
 import { DEFAULT_LEGEND_ITEMS } from '../constants';
+import { DEFAULT_PIN_COLOR } from './pinUtils';
+import type { PinData } from '../types';
 
 describe('parseProject', () => {
   it('fills defaults for a minimal file', () => {
@@ -53,6 +55,26 @@ describe('parseProject', () => {
     expect(p.pins[0]).toEqual(pin);
   });
 
+  it('loads pins of older files without functions unchanged', () => {
+    const pin = { id: 'a', x: 5, y: 6, targetX: 0, targetY: 0, text: 'PA0', color: '#000', isPwm: false };
+    const p = parseProject(JSON.stringify({ scale: 1, position: { x: 0, y: 0 }, labelScale: 1, pins: [pin] }));
+    expect(p.pins[0]).toEqual(pin);
+    expect('functions' in p.pins[0]).toBe(false);
+  });
+
+  it('fills missing function ids and colors and drops a malformed functions field', () => {
+    const p = parseProject(JSON.stringify({
+      scale: 1, position: { x: 0, y: 0 }, labelScale: 1,
+      pins: [
+        { id: 'a', x: 0, y: 0, targetX: 0, targetY: 0, text: 'PA0', color: '#000', isPwm: false, functions: [{ text: 'ADC0' }] },
+        { id: 'b', x: 0, y: 0, targetX: 0, targetY: 0, text: 'PA1', color: '#000', isPwm: false, functions: 'oops' },
+      ],
+    }));
+    expect(p.pins[0].functions).toEqual([{ id: expect.any(String), text: 'ADC0', color: DEFAULT_PIN_COLOR }]);
+    expect(p.pins[0].functions![0].id).not.toBe('');
+    expect(p.pins[1].functions).toBeUndefined();
+  });
+
   it('throws on invalid JSON', () => {
     expect(() => parseProject('not json')).toThrow();
   });
@@ -67,5 +89,22 @@ describe('serializeProject', () => {
       legendItems: [], isLegendVisible: true, anchorSize: 5, labelScale: null,
     });
     expect(data.images?.[0]).toEqual({ id: 'i', src: 's', x: 1, y: 2, width: 3, height: 4, rotation: 0 });
+  });
+
+  it('round-trips function labels through save and load', () => {
+    const pins: PinData[] = [{
+      id: 'a', x: 10, y: 20, targetX: 100, targetY: 30, text: 'PA0', color: '#0d9488', isPwm: true,
+      functions: [
+        { id: 'f1', text: 'ADC0', color: '#16a34a' },
+        { id: 'f2', text: 'CTS2', color: '#1d4ed8', textColor: '#ffff00' },
+      ],
+    }];
+    const json = JSON.stringify(serializeProject({
+      images: [], pins, lines: [], scale: 1, position: { x: 0, y: 0 }, gapSize: 8,
+      legendItems: [], isLegendVisible: true, anchorSize: 5, labelScale: 1.5,
+    }));
+    const loaded = parseProject(json);
+    expect(loaded.pins).toEqual(pins);
+    expect(loaded.gapSize).toBe(8);
   });
 });

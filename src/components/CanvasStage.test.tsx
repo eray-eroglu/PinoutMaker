@@ -23,6 +23,9 @@ vi.mock('react-konva', () => {
   };
 });
 
+// Every label measures 60 label units (the minimum width), independent of the font
+vi.mock('../utils/labelMeasure', () => ({ measureLabelText: () => 60 }));
+
 vi.mock('./PinComponent', () => {
   return {
     PinComponent: (props: ComponentProps<typeof PinComponentType>) => {
@@ -66,6 +69,7 @@ describe('CanvasStage - Drag Snapping (Magnets)', () => {
     onSelectImage: vi.fn(),
     pins: dummyPins,
     selectedPinId: null,
+    selectedFunctionIndex: -1,
     onSelectPin: vi.fn(),
     onUpdatePin: vi.fn(),
     onDoubleClickPin: vi.fn(),
@@ -127,6 +131,27 @@ describe('CanvasStage - Drag Snapping (Magnets)', () => {
     // There should be NO guide line rendered
     const guideLines = container.querySelectorAll('div[data-testid="konva-line"][data-is-guide="true"]');
     expect(guideLines.length).toBe(0);
+  });
+
+  it('gap-snaps next to the end of another pin\'s function row, not just its primary label', () => {
+    // pin-a is right of its anchor: labels at x 100-160, 180-240, 260-320 (gap 20)
+    const rowPins: PinData[] = [
+      {
+        id: 'pin-a', text: 'PB7', isPwm: false, color: '#0d9488', x: 100, y: 100, targetX: 50, targetY: 110,
+        functions: [
+          { id: 'f1', text: 'SDA1', color: '#0ea5e9' },
+          { id: 'f2', text: 'RXD1', color: '#1d4ed8' },
+        ],
+      },
+      { id: 'pin-b', text: 'PB6', isPwm: false, color: '#0d9488', x: 500, y: 300, targetX: 0, targetY: 300 },
+    ];
+    const { container } = render(<CanvasStage {...defaultProps} pins={rowPins} />);
+
+    act(() => {
+      const result = capturedDragMove('pin-b', 343, 103, false) as { x: number; y: number };
+      expect(result).toEqual({ x: 340, y: 100 }); // 320 (row end) + gap 20
+    });
+    expect(container.querySelectorAll('div[data-testid="konva-rect"]').length).toBeGreaterThan(0);
   });
 
   it('clears guides when drag ends', () => {

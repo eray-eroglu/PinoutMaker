@@ -7,6 +7,8 @@ import { PinComponent } from './PinComponent';
 import { LineComponent } from './LineComponent';
 import { calculateManhattanPath } from '../utils/lineUtils';
 import { computeResize, getHandlePosition } from '../utils/imageResize';
+import { layoutPinLabels } from '../utils/pinLayout';
+import { measureLabelText } from '../utils/labelMeasure';
 import type { ResizeAnchor } from '../utils/imageResize';
 
 interface CanvasStageProps {
@@ -16,9 +18,12 @@ interface CanvasStageProps {
   onSelectImage: (id: string | null) => void;
   pins: PinData[];
   selectedPinId: string | null;
-  onSelectPin: (id: string | null) => void;
+  /** Index into the selected pin's functions of the label the user picked; -1 = primary label. */
+  selectedFunctionIndex: number;
+  /** functionIndex: which label of the pin was clicked (-1 = primary label or anchor). */
+  onSelectPin: (id: string | null, functionIndex?: number) => void;
   onUpdatePin: (pin: PinData, saveHistory?: boolean) => void;
-  onDoubleClickPin: (id: string, currentText: string) => void;
+  onDoubleClickPin: (id: string, functionIndex: number) => void;
   lines: LineData[];
   selectedLineId: string | null;
   onSelectLine: (id: string | null) => void;
@@ -48,6 +53,7 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
   onSelectImage,
   pins,
   selectedPinId,
+  selectedFunctionIndex,
   onSelectPin,
   onUpdatePin,
   onDoubleClickPin,
@@ -256,102 +262,69 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
     const currentPin = pins.find(p => p.id === id);
     if (!currentPin) return { x, y };
 
-    // Determine if the pin is on the left side of its anchor
-    const isLeftSide = x < currentPin.targetX;
-    
-    // Label sizes are stored in label units; convert to world coordinates
-    const currentWorldWidth = (currentPin.labelWidth || 60) * labelScale;
-    const currentWorldHeight = (currentPin.labelHeight || 26) * labelScale;
+    // All geometry comes from the shared row layout (primary label first, then functions)
+    const layoutOf = (pin: PinData) => layoutPinLabels(pin, labelScale, gapSize, measureLabelText);
+    const current = layoutOf({ ...currentPin, x, y });
+    const currentPrimary = current.labels[0];
+    const isLeftSide = current.side === 'left';
+    // The row may extend left of the primary label; keep that offset so snapping can place the row
+    const rowLeftOffset = current.bounds.x - x;
+    const rowWidth = current.bounds.width;
+    const labelHeight = currentPrimary.height;
 
-    // 1. Standard Alignment (Snap to common existing X or Y)
     pins.forEach(otherPin => {
         if (otherPin.id === id) return;
 
-        const otherWorldWidth = (otherPin.labelWidth || 60) * labelScale;
-        const otherLeftEdge = otherPin.x;
-        const otherRightEdge = otherPin.x + otherWorldWidth;
+        const other = layoutOf(otherPin);
+        const otherPrimary = other.labels[0];
+        const otherRow = other.bounds;
 
-        // --- GAP SNAPPING (Horizontal spacing next to another pin) ---
-        // If they are somewhat vertically aligned (Y is close)
-        if (Math.abs(otherPin.y - y) < THRESHOLD * 2) { 
-            const currentLeftEdge = x;
-            const currentRightEdge = x + currentWorldWidth;
+        // --- GAP SNAPPING (horizontal spacing next to another pin) ---
+        // Uses the full rows, so a pin can be placed after another pin's last function label.
+        if (Math.abs(otherPin.y - y) < THRESHOLD * 2) {
+            const currentRowLeft = x + rowLeftOffset;
+            const currentRowRight = currentRowLeft + rowWidth;
+            const otherRowRight = otherRow.x + otherRow.width;
 
             // Dragging current to the RIGHT of otherPin
-            if (Math.abs(currentLeftEdge - (otherRightEdge + FIXED_GAP)) < THRESHOLD) {
-                snappedX = otherRightEdge + FIXED_GAP;
+            if (Math.abs(currentRowLeft - (otherRowRight + FIXED_GAP)) < THRESHOLD) {
+                snappedX = otherRowRight + FIXED_GAP - rowLeftOffset;
                 snappedY = otherPin.y; // Perfect horizontal align
                 horizontalGuides.push(otherPin.y);
-                gapGuides.push({
-                   x: otherRightEdge,
-                   y: otherPin.y,
-                   width: FIXED_GAP,
-                   height: currentWorldHeight
-                });
+                gapGuides.push({ x: otherRowRight, y: otherPin.y, width: FIXED_GAP, height: labelHeight });
             }
 
             // Dragging current to the LEFT of otherPin
-            if (Math.abs(currentRightEdge - (otherLeftEdge - FIXED_GAP)) < THRESHOLD) {
-                snappedX = otherLeftEdge - FIXED_GAP - currentWorldWidth;
+            if (Math.abs(currentRowRight - (otherRow.x - FIXED_GAP)) < THRESHOLD) {
+                snappedX = otherRow.x - FIXED_GAP - rowWidth - rowLeftOffset;
                 snappedY = otherPin.y;
                 horizontalGuides.push(otherPin.y);
-                gapGuides.push({
-                   x: otherLeftEdge - FIXED_GAP,
-                   y: otherPin.y,
-                   width: FIXED_GAP,
-                   height: currentWorldHeight
-                });
+                gapGuides.push({ x: otherRow.x - FIXED_GAP, y: otherPin.y, width: FIXED_GAP, height: labelHeight });
             }
         }
 
         // Horizontal Alignment (y matches)
         if (Math.abs(otherPin.y - y) < THRESHOLD) {
             horizontalGuides.push(otherPin.y);
-            snappedY = otherPin.y; 
+            snappedY = otherPin.y;
         }
 
-        // Vertical Alignment
-        // If the pin is on the left side, we want to align its RIGHT edge with other left-side pins.
-        // Since we don't have exact rendered widths in state, we can use the labelWidth property
-        // if it exists, or estimate it.
-        // For now, we will align the left edges (x) for right-side pins,
-        // and for left-side pins, we will try to align their right edges if we know their widths.
-        
-        const otherIsLeftSide = otherPin.x < otherPin.targetX;
-
-        if (isLeftSide && otherIsLeftSide) {
-            // Both on left side. Try to align right edges.
-            // Right edge = x + width
-            // We need: x + currentWidth = otherPin.x + otherWidth
-            // So: x = otherPin.x + otherWidth - currentWidth
-            
-            // If we have the widths saved in the pin data (we added this to types.ts earlier)
-            if (currentPin.labelWidth && otherPin.labelWidth) {
-                // Convert unscaled labelWidth to world coordinates
-                const currentWorldWidth = currentPin.labelWidth * labelScale;
-                const otherWorldWidth = otherPin.labelWidth * labelScale;
-
-                const currentRightEdge = x + currentWorldWidth;
-                const otherRightEdge = otherPin.x + otherWorldWidth;
-                
-                if (Math.abs(otherRightEdge - currentRightEdge) < THRESHOLD) {
-                    // Snap right edges
-                    snappedX = otherPin.x + otherWorldWidth - currentWorldWidth;
-                    // Draw guide at the right edge
-                    verticalGuides.push(otherRightEdge);
-                }
-            } else {
-                // Fallback to left edge alignment if widths are unknown
-                if (Math.abs(otherPin.x - x) < THRESHOLD) {
-                    verticalGuides.push(otherPin.x);
-                    snappedX = otherPin.x;
-                }
+        // --- COLUMN ALIGNMENT (primary labels) ---
+        // Labels have a uniform minimum width, so aligning the primary labels' anchor-side edges
+        // lines up every function column behind them as well.
+        if (isLeftSide && other.side === 'left') {
+            // Left of the anchor: align right edges
+            const currentRightEdge = x + currentPrimary.width;
+            const otherRightEdge = otherPrimary.x + otherPrimary.width;
+            if (Math.abs(otherRightEdge - currentRightEdge) < THRESHOLD) {
+                snappedX = otherRightEdge - currentPrimary.width;
+                verticalGuides.push(otherRightEdge);
             }
-        } else if (!isLeftSide && !otherIsLeftSide) {
-            // Both on right side. Align left edges (standard).
-            if (Math.abs(otherPin.x - x) < THRESHOLD) {
-                verticalGuides.push(otherPin.x);
-                snappedX = otherPin.x;
+        } else if (!isLeftSide && other.side === 'right') {
+            // Right of the anchor: align left edges
+            if (Math.abs(otherPrimary.x - x) < THRESHOLD) {
+                verticalGuides.push(otherPrimary.x);
+                snappedX = otherPrimary.x;
             }
         }
     });
@@ -530,9 +503,11 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
               key={pin.id}
               pin={pin}
               labelScale={labelScale}
+              gapSize={gapSize}
               isSelected={pin.id === selectedPinId}
-              onSelect={(id) => {
-                onSelectPin(id);
+              selectedFunctionIndex={selectedFunctionIndex}
+              onSelect={(id, functionIndex) => {
+                onSelectPin(id, functionIndex);
                 onSelectImage(null);
                 if (onSelectLine) onSelectLine(null);
               }}

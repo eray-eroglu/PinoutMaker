@@ -1,6 +1,14 @@
+/** An extra function label shown in the pin's label row (e.g. ADC0, SDA1). */
+export interface PinFunction {
+  id: string;
+  text: string;
+  color: string;
+  textColor?: string;
+}
+
 export interface PinData {
   id: string;
-  /** World position (board-image pixels) of the label's top-left corner. */
+  /** World position (board-image pixels) of the primary label's top-left corner. */
   x: number;
   y: number;
   /** World position of the anchor dot. */
@@ -10,13 +18,23 @@ export interface PinData {
   labelDx?: number;
   /** @deprecated See labelDx. */
   labelDy?: number;
-  /** Measured label size in label units (multiply by the project's labelScale for world size). */
+  /**
+   * @deprecated Measured label size written by older versions. Label geometry now comes from
+   * layoutPinLabels (utils/pinLayout.ts); the fields are ignored and only kept so old files type-check.
+   */
   labelWidth?: number;
+  /** @deprecated See labelWidth. */
   labelHeight?: number;
+  /** Primary label, joined to the anchor by the leader line. */
   text: string;
   color: string;
   textColor?: string;
   isPwm: boolean;
+  /**
+   * Extra labels, in the order they follow the primary one (continuing away from the anchor).
+   * They have no stored position; layoutPinLabels derives it. Missing in older files.
+   */
+  functions?: PinFunction[];
 }
 
 export interface LineData {
