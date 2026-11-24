@@ -43,24 +43,32 @@ export const migrateLegacyPin = (pin: PinData, savedScale: number): PinData => {
   };
 };
 
-/** Suggests a label color from a pin name (GND → black, SDA → I2C blue, ...). */
+/**
+ * Name patterns → legend colors. Names are matched upper-cased with spaces, '_' and '-' removed,
+ * and may carry a peripheral/channel number (SDA1, TXD2, T1C2N, MOSI1, CAN TX ...).
+ * Order matters: the first matching rule wins.
+ */
+const SMART_COLOR_RULES: Array<[RegExp, string]> = [
+  [/^(GND|VSS|AGND|DGND|PGND)$/, '#000000'], // GROUND
+  [/^(VCC|VDD|VDDA|VIN|VBAT|VBUS|3V3|3\.3V|5V|12V|AVCC)$/, '#dc2626'], // POWER
+  [/^(SDA|SCL|SMBA|I2C)\d*$/, '#0ea5e9'], // I2C
+  [/^(ADC|AIN|DAC)/, '#16a34a'], // ANALOG
+  [/^(U?S?ART|RXD?|TXD?|CTS|RTS|CK)\d*$/, '#1d4ed8'], // USART
+  [/^(SPI|MOSI|MISO|SCK|NSS|CS|CLK)\d*$/, '#9333ea'], // SPI
+  [/^CAN/, '#db2777'], // CAN BUS
+  [/^(TIM\d*|T\d+(C\d+N?E?|BKIN|ETR)|CH\d+N?)$/, '#e11d48'], // TIMER & CHANNEL
+  [/^(USB.*|D[+-]|DP|DM)$/, '#65a30d'], // USB
+  [/^(EN|BOOT\d*|N?RST|RESET|WAKEUP|WKUP|SWDIO|SWCLK|SWO|SWD|JT[A-Z]+)$/, '#ca8a04'], // CONTROL
+  [/^(GPIO|P[A-K]|P[A-K]?\d{1,2})$/, '#0d9488'], // PHYSICAL PIN
+];
+
+/** Suggests a label color from a pin or function name (GND → black, SDA1 → I2C blue, ...). */
 export const getSmartColor = (text: string): string | null => {
-  const t = text.toUpperCase().trim();
+  const t = text.toUpperCase().replace(/[\s_-]+(?=.)/g, '').trim();
   if (!t) return null;
-
-  if (t === 'GND') return '#000000'; // GROUND
-  if (['VCC', '5V', '3V3', 'VIN', 'VDD', 'VSS'].includes(t)) return '#dc2626'; // POWER
-  if (['SDA', 'SCL', 'I2C'].includes(t)) return '#0ea5e9'; // I2C
-  if (t.startsWith('ADC') || t.startsWith('AIN') || t.startsWith('DAC')) return '#16a34a'; // ANALOG
-  if (['RX', 'TX', 'CTS', 'RTS'].includes(t) || t.startsWith('UART') || t.startsWith('USART')) return '#1d4ed8'; // USART
-  if (['CS', 'SCK', 'MOSI', 'MISO', 'NSS', 'CLK'].includes(t) || t.startsWith('SPI')) return '#9333ea'; // SPI
-  if (t.startsWith('CAN')) return '#db2777'; // CAN BUS
-  if (t.startsWith('TIM') || /^CH\d/.test(t)) return '#e11d48'; // TIMER & CHANNEL
-  if (t.startsWith('USB') || ['D+', 'D-'].includes(t)) return '#65a30d'; // USB
-  if (['EN', 'BOOT', 'RST', 'RESET'].includes(t)) return '#ca8a04'; // CONTROL
-  // Port pins: P1, P12, PA0, PB12 ... and the bare port names
-  if (['GPIO', 'PA', 'PB', 'PC'].includes(t) || /^P[A-K]?\d{1,2}$/.test(t)) return '#0d9488'; // PHYSICAL PIN
-
+  for (const [pattern, color] of SMART_COLOR_RULES) {
+    if (pattern.test(t)) return color;
+  }
   return null;
 };
 

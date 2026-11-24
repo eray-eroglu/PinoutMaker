@@ -49,6 +49,20 @@ describe('getSmartColor', () => {
     expect(getSmartColor(text)).toBe(color);
   });
 
+  // Names as they appear on real STM32 pinouts (peripheral/channel numbers, spaces, suffixes)
+  it.each([
+    ['SDA1', '#0ea5e9'], ['SCL2', '#0ea5e9'], ['SMBA1', '#0ea5e9'],
+    ['TXD1', '#1d4ed8'], ['RXD3', '#1d4ed8'], ['CTS2', '#1d4ed8'], ['RTS1', '#1d4ed8'], ['CK3', '#1d4ed8'], ['USART2', '#1d4ed8'],
+    ['MOSI1', '#9333ea'], ['MISO2', '#9333ea'], ['SCK1', '#9333ea'], ['NSS2', '#9333ea'],
+    ['T2C1E', '#e11d48'], ['T1C2N', '#e11d48'], ['T1BKIN', '#e11d48'], ['T4C4', '#e11d48'],
+    ['CAN TX', '#db2777'], ['CAN_RX', '#db2777'],
+    ['USB+', '#65a30d'], ['USB-', '#65a30d'], ['D-', '#65a30d'],
+    ['SWDIO', '#ca8a04'], ['SWCLK', '#ca8a04'], ['JTMS', '#ca8a04'], ['JTRST', '#ca8a04'], ['WAKE UP', '#ca8a04'],
+    ['VBAT', '#dc2626'], ['VSS', '#000000'], ['ADC9', '#16a34a'], ['PB10', '#0d9488'],
+  ])('real-world name %s → %s', (text, color) => {
+    expect(getSmartColor(text)).toBe(color);
+  });
+
   it.each(['P', 'PWR', 'CHARGE', ''])('does not match %j', text => {
     expect(getSmartColor(text)).toBeNull();
   });

@@ -32,3 +32,6 @@ release/
 .env.local
 .env.*.local
 test_out.txt*
+
+# Claude Code local state (agent worktrees, briefs)
+.claude/
