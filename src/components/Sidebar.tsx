@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import type { ReactNode } from 'react';
 import type { PinData, LineData, LegendItem, LegendMode } from '../types';
 import type { LoadedImage } from '../utils/project';
 import { isLightColor } from '../utils/colorUtils';
@@ -20,6 +21,8 @@ export interface FocusSidebarInputDetail {
 
 interface SidebarProps {
   selectedPin: PinData | null;
+  /** Shown instead of the pin editor while two or more pins are selected. */
+  multiPinPanel?: ReactNode;
   /** Label of the selected pin picked on the canvas (-1 = primary label). */
   selectedFunctionIndex: number;
   onSelectFunctionIndex: (index: number) => void;
@@ -69,8 +72,11 @@ const COLORS = [
   '#1f2937', // gray-800 (default/neutral)
 ];
 
-/** Palette swatches plus a custom color picker; the selected color gets a ring. */
-const ColorPalette = ({ value, onChange }: { value: string; onChange: (color: string) => void }) => (
+/**
+ * Palette swatches plus a custom color picker; the selected color gets a ring.
+ * `value` null means no single colour (several pins with different colours): nothing is ringed.
+ */
+export const ColorPalette = ({ value, onChange }: { value: string | null; onChange: (color: string) => void }) => (
   <div className='grid grid-cols-4 gap-2'>
     {COLORS.map((c) => (
       <div
@@ -87,13 +93,13 @@ const ColorPalette = ({ value, onChange }: { value: string; onChange: (color: st
       className={`w-8 h-8 rounded cursor-pointer transition-transform hover:scale-110 relative flex items-center justify-center overflow-hidden`}
       style={{
         background: 'conic-gradient(red, yellow, lime, aqua, blue, magenta, red)',
-        boxShadow: !COLORS.includes(value) ? '0 0 0 2px white, 0 0 0 4px gray' : 'none',
+        boxShadow: value !== null && !COLORS.includes(value) ? '0 0 0 2px white, 0 0 0 4px gray' : 'none',
       }}
       title="Custom Color"
     >
       <input
         type="color"
-        value={value}
+        value={value ?? '#000000'}
         onChange={(e) => onChange(e.target.value)}
         className="opacity-0 absolute inset-0 w-full h-full cursor-pointer"
       />
@@ -102,7 +108,7 @@ const ColorPalette = ({ value, onChange }: { value: string; onChange: (color: st
 );
 
 export const Sidebar = ({
-  selectedPin, selectedFunctionIndex, onSelectFunctionIndex, onUpdatePin, selectedImage, onUpdateImage,
+  selectedPin, multiPinPanel, selectedFunctionIndex, onSelectFunctionIndex, onUpdatePin, selectedImage, onUpdateImage,
   selectedLine, onUpdateLine,
   onPushHistory, onExportPinoutTemplate, gapSize, onGapSizeChange,
   legendItems, onLegendItemsChange, isLegendVisible, onLegendVisibilityChange,
@@ -446,7 +452,9 @@ export const Sidebar = ({
         {selectedLine ? 'Line Properties' : 'Pin Properties'}
       </h2>
 
-      {!selectedPin && !selectedLine ? (
+      {multiPinPanel ? (
+        multiPinPanel
+      ) : !selectedPin && !selectedLine ? (
         <div className='text-gray-400 text-sm'>
           Select a pin or line to edit properties.
         </div>

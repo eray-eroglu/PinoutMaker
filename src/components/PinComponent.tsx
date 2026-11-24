@@ -20,16 +20,27 @@ interface PinComponentProps {
   /** World gap between the labels of the row. */
   gapSize: number;
   isSelected: boolean;
-  /** Index into pin.functions of the label the user picked, -1 for the primary label. */
-  selectedFunctionIndex: number;
+  /**
+   * Index into pin.functions of the label the user picked, -1 for the primary label, null when
+   * no label is picked (pin not selected, or one of several selected pins).
+   */
+  selectedFunctionIndex: number | null;
   onSelect: (
     id: string,
     functionIndex: number,
     e: Konva.KonvaEventObject<MouseEvent | TouchEvent>
   ) => void;
   onUpdate: (pin: PinData, saveHistory?: boolean) => void;
-  onDragMove?: (id: string, x: number, y: number, isCtrlPressed: boolean) => { x: number, y: number } | void;
+  /** withAnchor: Alt is held, so the whole pin (label and anchor) moves. Returns the snapped position. */
+  onDragMove?: (id: string, x: number, y: number, isCtrlPressed: boolean, withAnchor: boolean) => { x: number, y: number } | void;
   onDragEnd?: () => void;
+  /** The label row was dropped `dx/dy` world units from its stored position. */
+  onRowDragEnd: (id: string, dx: number, dy: number, withAnchor: boolean) => void;
+  /**
+   * Set while another selected pin is being dragged: this pin follows it by the same offset
+   * (label only, or the whole pin with withAnchor).
+   */
+  followOffset?: { dx: number; dy: number; withAnchor: boolean } | null;
   onDoubleClick: (id: string, functionIndex: number) => void;
   anchorSize: number;
 }
@@ -63,6 +74,8 @@ export const PinComponent: React.FC<PinComponentProps> = ({
   onUpdate,
   onDragMove,
   onDragEnd,
+  onRowDragEnd,
+  followOffset,
   onDoubleClick,
   anchorSize,
 }) => {
@@ -71,8 +84,19 @@ export const PinComponent: React.FC<PinComponentProps> = ({
   // Live positions while dragging. Rendering from them (instead of letting Konva move nodes
   // on its own) keeps the leader line attached and lets the row flip sides the moment the
   // label crosses its anchor.
-  const [label, setLabelDrag] = useDragOverride({ x: pin.x, y: pin.y });
-  const [anchor, setAnchorDrag] = useDragOverride({ x: pin.targetX, y: pin.targetY });
+  const [draggedLabel, setLabelDrag] = useDragOverride({ x: pin.x, y: pin.y });
+  const [draggedAnchor, setAnchorDrag] = useDragOverride({ x: pin.targetX, y: pin.targetY });
+  // Alt held during the current label drag: the anchor travels with the label
+  const [dragWithAnchor, setDragWithAnchor] = useState(false);
+
+  let label = draggedLabel;
+  let anchor = draggedAnchor;
+  if (followOffset) {
+    label = { x: pin.x + followOffset.dx, y: pin.y + followOffset.dy };
+    if (followOffset.withAnchor) anchor = { x: pin.targetX + followOffset.dx, y: pin.targetY + followOffset.dy };
+  } else if (dragWithAnchor) {
+    anchor = { x: pin.targetX + label.x - pin.x, y: pin.targetY + label.y - pin.y };
+  }
   const layout = layoutPinLabels(
     { ...pin, ...label, targetX: anchor.x },
     labelScale,
@@ -95,8 +119,10 @@ export const PinComponent: React.FC<PinComponentProps> = ({
   const handleRowDragMove = (e: Konva.KonvaEventObject<DragEvent>) => {
     const node = e.target;
     let pos = { x: node.x(), y: node.y() };
+    const withAnchor = e.evt.altKey;
+    setDragWithAnchor(withAnchor);
     if (onDragMove) {
-      const snapped = onDragMove(pin.id, pos.x, pos.y, e.evt.ctrlKey || e.evt.metaKey);
+      const snapped = onDragMove(pin.id, pos.x, pos.y, e.evt.ctrlKey || e.evt.metaKey, withAnchor);
       if (snapped) {
         node.position(snapped);
         pos = snapped;
@@ -109,8 +135,10 @@ export const PinComponent: React.FC<PinComponentProps> = ({
     const x = e.target.x();
     const y = e.target.y();
     if (onDragEnd) onDragEnd(); // Clear guides
-    // The primary label position is all that is stored; the rest of the row follows it
-    onUpdate({ ...pin, x, y }, true);
+    setDragWithAnchor(false);
+    // The primary label position is all that is stored; the rest of the row follows it.
+    // The parent applies the offset (to every selected pin when this one is part of a selection).
+    onRowDragEnd(pin.id, x - pin.x, y - pin.y, dragWithAnchor);
   };
 
   const handleAnchorDragEnd = (e: Konva.KonvaEventObject<DragEvent>) => {
@@ -128,6 +156,13 @@ export const PinComponent: React.FC<PinComponentProps> = ({
 
   const handleSelect = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>, functionIndex: number) => {
     e.cancelBubble = true;
+
+    // Shift/Ctrl+click toggles selection; two quick toggles are not a double click
+    if (e.evt.shiftKey || e.evt.ctrlKey || e.evt.metaKey) {
+      lastClickRef.current = { time: 0, functionIndex: -1 };
+      onSelect(pin.id, functionIndex, e);
+      return;
+    }
 
     // Manual double click detection; both clicks must hit the same label
     const now = Date.now();

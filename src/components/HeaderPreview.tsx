@@ -35,6 +35,7 @@ export const HeaderPreview = ({ start, end, anchors, scale, ghostPins, labelScal
             onSelect={noop}
             onUpdate={noop}
             onDoubleClick={noop}
+            onRowDragEnd={noop}
             anchorSize={anchorSize}
           />
         ))}
