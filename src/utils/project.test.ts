@@ -12,6 +12,8 @@ describe('parseProject', () => {
     expect(p.gapSize).toBe(12);
     expect(p.anchorSize).toBe(5);
     expect(p.isLegendVisible).toBe(true);
+    expect(p.legendMode).toBe('all');
+    expect(p.legendShowCounts).toBe(false);
     expect(p.legendItems).toEqual(DEFAULT_LEGEND_ITEMS);
   });
 
@@ -86,7 +88,7 @@ describe('serializeProject', () => {
     const data = serializeProject({
       images: [{ id: 'i', src: 's', x: 1, y: 2, width: 3, height: 4, rotation: 0, element } as never],
       pins: [], lines: [], scale: 1, position: { x: 0, y: 0 }, gapSize: 12,
-      legendItems: [], isLegendVisible: true, anchorSize: 5, labelScale: null,
+      legendItems: [], isLegendVisible: true, legendMode: 'all', legendShowCounts: false, anchorSize: 5, labelScale: null,
     });
     expect(data.images?.[0]).toEqual({ id: 'i', src: 's', x: 1, y: 2, width: 3, height: 4, rotation: 0 });
   });
@@ -101,7 +103,7 @@ describe('serializeProject', () => {
     }];
     const json = JSON.stringify(serializeProject({
       images: [], pins, lines: [], scale: 1, position: { x: 0, y: 0 }, gapSize: 8,
-      legendItems: [], isLegendVisible: true, anchorSize: 5, labelScale: 1.5,
+      legendItems: [], isLegendVisible: true, anchorSize: 5, labelScale: 1.5, legendMode: 'all', legendShowCounts: false,
     }));
     const loaded = parseProject(json);
     expect(loaded.pins).toEqual(pins);

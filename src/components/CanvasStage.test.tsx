@@ -68,6 +68,8 @@ describe('CanvasStage - Drag Snapping (Magnets)', () => {
     selectedImageId: null,
     onSelectImage: vi.fn(),
     pins: dummyPins,
+    legendMode: 'all',
+    legendShowCounts: false,
     selectedPinId: null,
     selectedFunctionIndex: -1,
     onSelectPin: vi.fn(),

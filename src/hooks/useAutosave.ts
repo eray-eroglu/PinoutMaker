@@ -10,7 +10,7 @@ import type { ProjectState } from '../utils/project';
  * Pan/zoom (scale, position) alone does not trigger a save, but is stored with the next one.
  */
 export const useAutosave = (state: ProjectState, enabled: boolean) => {
-  const { images, pins, lines, gapSize, legendItems, isLegendVisible, anchorSize, labelScale } = state;
+  const { images, pins, lines, gapSize, legendItems, isLegendVisible, legendMode, legendShowCounts, anchorSize, labelScale } = state;
 
   // Read at save time so the snapshot has the latest pan/zoom without re-triggering on it.
   const latestRef = useRef(state);
@@ -35,5 +35,5 @@ export const useAutosave = (state: ProjectState, enabled: boolean) => {
       document.removeEventListener('visibilitychange', flushWhenHidden);
       debouncer.cancel();
     };
-  }, [enabled, images, pins, lines, gapSize, legendItems, isLegendVisible, anchorSize, labelScale]);
+  }, [enabled, images, pins, lines, gapSize, legendItems, isLegendVisible, legendMode, legendShowCounts, anchorSize, labelScale]);
 };

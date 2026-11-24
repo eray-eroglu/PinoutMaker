@@ -2,7 +2,8 @@ import { useEffect, forwardRef, useState, useRef, useCallback  } from 'react';
 import { Stage, Layer, Line, Rect, Image as KonvaImage, Circle, Group } from 'react-konva';
 import Konva from 'konva';
 import { Maximize } from 'lucide-react';
-import type { PinData, LineData, LegendItem } from '../types';
+import type { PinData, LineData, LegendItem, LegendMode } from '../types';
+import { LegendPanel } from './LegendPanel';
 import type { LoadedImage } from '../utils/project';
 import { PinComponent } from './PinComponent';
 import { LineComponent } from './LineComponent';
@@ -40,6 +41,8 @@ interface CanvasStageProps {
   gapSize: number;
   legendItems: LegendItem[];
   isLegendVisible: boolean;
+  legendMode: LegendMode;
+  legendShowCounts: boolean;
   anchorSize: number;
   /** World size of one label unit; see PinData. */
   labelScale: number;
@@ -75,6 +78,8 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
   gapSize,
   legendItems,
   isLegendVisible,
+  legendMode,
+  legendShowCounts,
   anchorSize,
   labelScale,
   onPushHistory,
@@ -646,35 +651,7 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
 
       {/* Legend Panel */}
       {isLegendVisible && (
-        <div className="absolute top-4 left-4 bg-[#e6e6e6] border border-gray-300 rounded shadow-md p-2 w-48 pointer-events-none opacity-90">
-          <h3 className="text-xs font-normal text-gray-600 mb-2 uppercase tracking-wider">TABLE</h3>
-          <div className="flex flex-col gap-[2px]">
-            {legendItems.map((item) => (
-              <div 
-                key={item.id} 
-                className="flex items-center justify-center text-white text-[10px] font-normal py-1 border border-black/50"
-                style={{ backgroundColor: item.color }}
-              >
-                {item.text}
-              </div>
-            ))}
-          </div>
-          
-          <div className="mt-2 pt-2 border-t border-gray-300 flex flex-col gap-1 text-[10px] text-gray-600">
-            <div className="flex items-center gap-2">
-              <svg width="20" height="10" className="overflow-visible">
-                <path d="M 0 5 L 20 5" stroke="black" strokeWidth="1" />
-              </svg>
-              <span>Standard Pin</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <svg width="20" height="10" className="overflow-visible">
-                <path d="M 0 5 Q 5 0, 10 5 T 20 5" stroke="black" strokeWidth="1" fill="none" />
-              </svg>
-              <span>PWM Pin</span>
-            </div>
-          </div>
-        </div>
+        <LegendPanel legendItems={legendItems} pins={pins} mode={legendMode} showCounts={legendShowCounts} />
       )}
     </div>
   );

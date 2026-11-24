@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import type { PinData, LineData, LegendItem } from '../types';
+import type { PinData, LineData, LegendItem, LegendMode } from '../types';
 import type { LoadedImage } from '../utils/project';
 import { isLightColor } from '../utils/colorUtils';
 import {
@@ -37,6 +37,10 @@ interface SidebarProps {
   onLegendItemsChange: (items: LegendItem[]) => void;
   isLegendVisible: boolean;
   onLegendVisibilityChange: (visible: boolean) => void;
+  legendMode: LegendMode;
+  onLegendModeChange: (mode: LegendMode) => void;
+  legendShowCounts: boolean;
+  onLegendShowCountsChange: (show: boolean) => void;
   anchorSize: number;
   onAnchorSizeChange: (size: number) => void;
   /** World size of one label unit. */
@@ -97,7 +101,8 @@ export const Sidebar = ({
   selectedPin, selectedFunctionIndex, onSelectFunctionIndex, onUpdatePin, selectedImage, onUpdateImage,
   selectedLine, onUpdateLine,
   onPushHistory, onExportPinoutTemplate, gapSize, onGapSizeChange,
-  legendItems, onLegendItemsChange, isLegendVisible, onLegendVisibilityChange, anchorSize, onAnchorSizeChange,
+  legendItems, onLegendItemsChange, isLegendVisible, onLegendVisibilityChange,
+  legendMode, onLegendModeChange, legendShowCounts, onLegendShowCountsChange, anchorSize, onAnchorSizeChange,
   labelScale, onLabelScaleChange,
 }: SidebarProps) => {
   const [customStep, setCustomStep] = useState<number>(5);
@@ -297,6 +302,34 @@ export const Sidebar = ({
             />
             Show Table on Canvas
           </label>
+
+          {isLegendVisible && (
+            <div className="space-y-2">
+              <div className="text-xs font-semibold text-gray-500 uppercase">Show</div>
+              <div className="flex rounded border border-gray-300 overflow-hidden text-xs" role="group" aria-label="Table rows to show">
+                {([['all', 'All rows'], ['used', 'Only used colours'], ['dimUnused', 'Dim unused']] as const).map(([mode, label]) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    aria-pressed={legendMode === mode}
+                    onClick={() => onLegendModeChange(mode)}
+                    className={`flex-1 px-1 py-1 border-r last:border-r-0 border-gray-300 ${legendMode === mode ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={legendShowCounts}
+                  onChange={(e) => onLegendShowCountsChange(e.target.checked)}
+                  className="rounded border-gray-300 text-blue-600"
+                />
+                Show counts
+              </label>
+            </div>
+          )}
 
           {isLegendVisible && (
             <div className="space-y-2">

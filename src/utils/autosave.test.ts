@@ -18,7 +18,7 @@ const pin: PinData = {
 
 const baseState: ProjectState = {
   images: [], pins: [], lines: [], scale: 2, position: { x: 3, y: 4 }, gapSize: 12,
-  legendItems: [{ id: 'l1', color: '#ff0000', text: 'Power' }], isLegendVisible: true, anchorSize: 5, labelScale: null,
+  legendItems: [{ id: 'l1', color: '#ff0000', text: 'Power' }], isLegendVisible: true, legendMode: 'all', legendShowCounts: false, anchorSize: 5, labelScale: null,
 };
 
 const withPin = (): ProjectState => ({ ...baseState, pins: [pin], labelScale: 0.5 });
