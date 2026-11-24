@@ -12,7 +12,8 @@ import type { FocusSidebarInputDetail } from './components/Sidebar';
 import { exportPinoutTemplate, importPinoutTemplate, parsePinoutTemplate, pinoutFileName } from './utils/pinoutTemplate';
 import { loadImageElement, loadProjectImages, parseProject, serializeProject } from './utils/project';
 import type { LoadedImage } from './utils/project';
-import { exportPdf } from './utils/exportPdf';
+import { exportDiagram } from './utils/export';
+import type { ExportOptions } from './utils/export';
 import { clearAutosave, loadAutosave } from './utils/autosave';
 import type { AutosaveRecord } from './utils/autosave';
 import { useAutosave } from './hooks/useAutosave';
@@ -28,9 +29,6 @@ const PROJECT_FILE_TYPES = [{ description: 'JSON Files', accept: { 'application/
 
 const isEditableElement = (el: Element | null) =>
   el instanceof HTMLElement && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
-
-/** Lets React commit and Konva repaint before reading the canvas. */
-const nextFrame = () => new Promise(resolve => setTimeout(resolve, 50));
 
 function App() {
   const [images, setImages] = useState<LoadedImage[]>([]);
@@ -570,18 +568,18 @@ function App() {
     void clearAutosave();
   };
 
-  const handleExportPdf = async () => {
-    const stage = stageRef.current;
-    if (!stage) return;
-    // Hide selection outlines and handles from the export
-    clearSelection();
-    await nextFrame();
+  const handleExport = async (options: ExportOptions) => {
     try {
-      const exported = await exportPdf(stage, { images, pins, lines, scale, labelScale: effectiveLabelScale, gapSize, legendItems, isLegendVisible, legendMode });
-      if (!exported) alert('Nothing to export!');
+      // Built from project state, so selection outlines and handles never appear in the file
+      const result = await exportDiagram(
+        { images, pins, lines, labelScale: effectiveLabelScale, gapSize, anchorSize, legendItems, legendMode },
+        options,
+      );
+      if (!result.exported) alert('Nothing to export!');
+      else if (result.note) alert(result.note);
     } catch (e) {
-      console.error('PDF Export failed', e);
-      alert('Failed to export PDF: ' + (e instanceof Error ? e.message : String(e)));
+      console.error('Export failed', e);
+      alert('Failed to export: ' + (e instanceof Error ? e.message : String(e)));
     }
   };
 
@@ -657,7 +655,8 @@ function App() {
         onRotateImage={handleRotateImage}
         onSave={handleSaveProject}
         onLoad={handleLoadProject}
-        onExportPdf={handleExportPdf}
+        onExport={handleExport}
+        isLegendVisible={isLegendVisible}
         isPinSelected={!!selectedPinId || !!selectedLineId || !!selectedImageId}
         isImageLoaded={images.length > 0}
         isAddingPin={isAddingPin}

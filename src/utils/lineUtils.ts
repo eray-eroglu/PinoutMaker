@@ -79,3 +79,27 @@ export const calculateWavePoints = (points: number[], scale: number): number[] =
 
   return wavePoints;
 };
+
+/**
+ * Build the full points array for a multi-point polyline where every
+ * consecutive pair of user-defined anchors is connected by an orthogonal
+ * (Manhattan) two-segment path.
+ */
+export function buildOrthogonalPoints(anchors: number[]): number[] {
+  if (anchors.length < 4) return anchors;
+  const result: number[] = [];
+  for (let i = 0; i < anchors.length - 2; i += 2) {
+    const x1 = anchors[i];
+    const y1 = anchors[i + 1];
+    const x2 = anchors[i + 2];
+    const y2 = anchors[i + 3];
+    const seg = calculateManhattanPath(x1, y1, x2, y2);
+    if (i === 0) {
+      result.push(...seg);
+    } else {
+      // Skip the first point of the segment (same as previous end point)
+      result.push(...seg.slice(2));
+    }
+  }
+  return result;
+}
