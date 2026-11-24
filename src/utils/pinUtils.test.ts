@@ -59,6 +59,7 @@ describe('getSmartColor', () => {
     ['USB+', '#65a30d'], ['USB-', '#65a30d'], ['D-', '#65a30d'],
     ['SWDIO', '#ca8a04'], ['SWCLK', '#ca8a04'], ['JTMS', '#ca8a04'], ['JTRST', '#ca8a04'], ['WAKE UP', '#ca8a04'],
     ['VBAT', '#dc2626'], ['VSS', '#000000'], ['ADC9', '#16a34a'], ['PB10', '#0d9488'],
+    ['I2C SDA', '#0ea5e9'], ['SPI1_MOSI', '#9333ea'], ['SPI1 SCK', '#9333ea'], ['UART2_TX', '#1d4ed8'], ['TIM2/CH1', '#e11d48'],
   ])('real-world name %s → %s', (text, color) => {
     expect(getSmartColor(text)).toBe(color);
   });

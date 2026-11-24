@@ -63,13 +63,20 @@ const SMART_COLOR_RULES: Array<[RegExp, string]> = [
 ];
 
 /** Suggests a label color from a pin or function name (GND → black, SDA1 → I2C blue, ...). */
-export const getSmartColor = (text: string): string | null => {
-  const t = text.toUpperCase().replace(/[\s_-]+(?=.)/g, '').trim();
-  if (!t) return null;
+const matchRule = (name: string): string | null => {
   for (const [pattern, color] of SMART_COLOR_RULES) {
-    if (pattern.test(t)) return color;
+    if (pattern.test(name)) return color;
   }
   return null;
+};
+
+export const getSmartColor = (text: string): string | null => {
+  const upper = text.toUpperCase().trim();
+  if (!upper) return null;
+  // Whole name first ("CAN TX" → CANTX, "WAKE UP" → WAKEUP), then each word on its own
+  // ("I2C SDA" → I2C, "SPI1_MOSI" → SPI1) so prefixed datasheet names still get a color.
+  const joined = upper.replace(/[\s_-]+(?=.)/g, '');
+  return matchRule(joined) ?? upper.split(/[\s_/]+/).reduce<string | null>((found, word) => found ?? (word ? matchRule(word) : null), null);
 };
 
 /**
