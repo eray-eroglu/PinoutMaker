@@ -259,6 +259,21 @@ describe('CanvasStage - Drag Snapping (Magnets)', () => {
     });
   });
 
+  it('passes pins stable handlers that call the latest props (PinComponent is memoized)', () => {
+    const first = vi.fn();
+    const latest = vi.fn();
+    const { rerender } = render(<CanvasStage {...defaultProps} onDoubleClickPin={first} />);
+    const before = pinProps.get('pin-1')!;
+    rerender(<CanvasStage {...defaultProps} onDoubleClickPin={latest} scale={2} />);
+    const after = pinProps.get('pin-1')!;
+    for (const key of ['onSelect', 'onUpdate', 'onDoubleClick', 'onDragMove', 'onDragEnd', 'onRowDragEnd'] as const) {
+      expect(after[key]).toBe(before[key]);
+    }
+    act(() => after.onDoubleClick('pin-1', 0));
+    expect(latest).toHaveBeenCalledWith('pin-1', 0);
+    expect(first).not.toHaveBeenCalled();
+  });
+
   describe('placing tools', () => {
     const pinLayer = (container: HTMLElement) =>
       container.querySelector('[data-testid="pin-pin-1"]')!.closest('[data-testid="konva-group"]') as HTMLElement;

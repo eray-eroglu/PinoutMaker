@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useEffectEvent } from 'react';
+import { useState, useRef, useEffect, useEffectEvent, useMemo } from 'react';
 import Konva from 'konva';
 import { TopBar } from './components/TopBar';
 import { Sidebar } from './components/Sidebar';
@@ -111,7 +111,7 @@ function App() {
     autosaveChecked && !isLoadingProject,
   );
 
-  const selectedPinIds = existingIds(rawSelectedPinIds, pins);
+  const selectedPinIds = useMemo(() => existingIds(rawSelectedPinIds, pins), [rawSelectedPinIds, pins]);
   const selectedPinId = primaryOf(selectedPinIds);
 
   const stageRef = useRef<Konva.Stage>(null);
@@ -803,13 +803,24 @@ function App() {
     setSelectedFunctionIndex(-1);
   };
 
-  const multiPinPanel = selectedPinIds.length >= 2 ? (
+  // Lays out every selected pin; memoized so pan/zoom and unrelated re-renders don't redo it
+  const multiPinStats = useMemo(() => {
+    if (selectedPinIds.length < 2) return null;
+    const layout = (pin: PinData) => layoutPinLabels(pin, effectiveLabelScale, gapSize, measureLabelText);
+    const tolerance = (LABEL_HEIGHT * effectiveLabelScale) / 2;
+    return {
+      rowPitch: averageRowPitch(pins, selectedPinIds, layout),
+      combinableRows: planCombineRows(pins, selectedPinIds, layout, tolerance).filter(row => row.length > 1).length,
+    };
+  }, [pins, selectedPinIds, effectiveLabelScale, gapSize]);
+
+  const multiPinPanel = multiPinStats ? (
     <MultiPinPanel
       // A new selection starts with its own measured row pitch in the spacing field
       key={selectedPinIds.join(',')}
       pins={pickPins(pins, selectedPinIds)}
-      rowPitch={averageRowPitch(pins, selectedPinIds, layoutOf)}
-      combinableRows={planCombineRows(pins, selectedPinIds, layoutOf, combineTolerance).filter(row => row.length > 1).length}
+      rowPitch={multiPinStats.rowPitch}
+      combinableRows={multiPinStats.combinableRows}
       onAlignEdges={() => applyToSelectedPins((p, ids) => alignLabelEdgesToAnchor(p, ids, layoutOf))}
       onAlignTops={() => applyToSelectedPins(alignLabelTops)}
       onDistribute={() => applyToSelectedPins((p, ids) => distributeVertically(p, ids, layoutOf))}

@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import { memo, useRef, useState } from 'react';
 import { Label, Tag, Text, Circle, Line, Group } from 'react-konva';
 import Konva from 'konva';
 import type { PinData } from '../types';
@@ -47,6 +47,9 @@ interface PinComponentProps {
 
 type Point = { x: number; y: number };
 
+// Shared, so react-konva sees an unchanged prop instead of a new object on every render
+const LABEL_SHADOW_OFFSET = { x: 2, y: 2 };
+
 /**
  * Position shown while dragging, overriding the stored one. It is never cleared on drop:
  * react-konva re-renders state changes synchronously, so clearing it would snap the node back
@@ -64,7 +67,8 @@ const useDragOverride = (stored: Point) => {
   return [override ?? stored, setOverride] as const;
 };
 
-export const PinComponent: React.FC<PinComponentProps> = ({
+/** Memoized: with hundreds of labels, re-rendering only the pins that changed keeps editing smooth. */
+export const PinComponent = memo(function PinComponent({
   pin,
   labelScale,
   gapSize,
@@ -78,7 +82,7 @@ export const PinComponent: React.FC<PinComponentProps> = ({
   followOffset,
   onDoubleClick,
   anchorSize,
-}) => {
+}: PinComponentProps) {
   const lastClickRef = useRef({ time: 0, functionIndex: -1 });
 
   // Live positions while dragging. Rendering from them (instead of letting Konva move nodes
@@ -234,12 +238,15 @@ export const PinComponent: React.FC<PinComponentProps> = ({
                 fill={entry.color}
                 cornerRadius={4}
                 shadowColor='black'
-                shadowBlur={isSelected ? 10 : 2}
+                shadowBlur={2}
                 shadowOpacity={0.2}
-                shadowOffset={{ x: 2, y: 2 }}
+                shadowOffset={LABEL_SHADOW_OFFSET}
+                // The outline is the selection mark: a large blurred shadow on hundreds of
+                // selected labels made every redraw slow. Its shadow would only be drawn twice.
+                shadowForStrokeEnabled={false}
                 // The label the user picked (for the sidebar) gets a blue outline
-                stroke={isFocused ? '#2563eb' : isSelected ? '#333' : undefined}
-                strokeWidth={isFocused ? 2.5 : isSelected ? 1.5 : 0}
+                stroke={isFocused ? '#2563eb' : isSelected ? '#111827' : undefined}
+                strokeWidth={isFocused ? 2.5 : isSelected ? 2 : 0}
                 strokeScaleEnabled={false}
               />
               <Text
@@ -260,4 +267,4 @@ export const PinComponent: React.FC<PinComponentProps> = ({
       </Group>
     </>
   );
-};
+});

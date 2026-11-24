@@ -16,6 +16,7 @@ import { HeaderPreview } from './HeaderPreview';
 import { constrainToAxis, headerPinPositions } from '../utils/header';
 import type { Point } from '../utils/header';
 import { pinsInMarquee, primaryOf, rectFromPoints } from '../utils/selection';
+import { useStableCallback } from '../hooks/useStableCallback';
 
 interface CanvasStageProps {
   images: LoadedImage[];
@@ -70,6 +71,19 @@ interface CanvasStageProps {
   /** Zooms and pans so all content is visible. */
   onFitToScreen?: () => void;
 }
+
+const GRID_SIZE = 50;
+const GRID_LIMIT = 2000; // 4000x4000 area
+
+// Built once: new points arrays on every render made Konva update and redraw all grid lines
+// on each edit
+const GRID_LINES = Array.from({ length: (2 * GRID_LIMIT) / GRID_SIZE + 1 }, (_, n) => {
+  const i = -GRID_LIMIT + n * GRID_SIZE;
+  return [
+    <Line key={`v-${i}`} points={[i, -GRID_LIMIT, i, GRID_LIMIT]} stroke='#e5e7eb' strokeWidth={1} listening={false} />,
+    <Line key={`h-${i}`} points={[-GRID_LIMIT, i, GRID_LIMIT, i]} stroke='#e5e7eb' strokeWidth={1} listening={false} />,
+  ];
+}).flat();
 
 export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
   images,
@@ -491,33 +505,20 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
       });
   };
 
-  // Grid generation
-  const gridSize = 50;
-  const GRID_LIMIT = 2000; // 4000x4000 area
-  const gridLines = [];
-
-  for (let i = -GRID_LIMIT; i <= GRID_LIMIT; i += gridSize) {
-    // Vertical
-    gridLines.push(
-      <Line
-        key={`v-${i}`}
-        points={[i, -GRID_LIMIT, i, GRID_LIMIT]}
-        stroke='#e5e7eb' // gray-200
-        strokeWidth={1}
-        listening={false}
-      />
-    );
-    // Horizontal
-    gridLines.push(
-      <Line
-        key={`h-${i}`}
-        points={[-GRID_LIMIT, i, GRID_LIMIT, i]}
-        stroke='#e5e7eb' // gray-200
-        strokeWidth={1}
-        listening={false}
-      />
-    );
-  }
+  // PinComponent is memoized: stable handlers mean a pin only re-renders when its own props
+  // change (one nudged pin no longer re-renders the other hundreds of labels)
+  const pinHandlers = {
+    onSelect: useStableCallback((id: string, functionIndex: number, e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
+      onSelectPin(id, functionIndex, e.evt.shiftKey || e.evt.ctrlKey || e.evt.metaKey);
+      onSelectImage(null);
+      if (onSelectLine) onSelectLine(null);
+    }),
+    onUpdate: useStableCallback(onUpdatePin),
+    onDoubleClick: useStableCallback(onDoubleClickPin),
+    onDragMove: useStableCallback(handleGroupDragMove),
+    onDragEnd: useStableCallback(handlePinDragEnd),
+    onRowDragEnd: useStableCallback(handleRowDragEnd),
+  };
 
   return (
     <div 
@@ -546,7 +547,7 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
         ref={ref}
       >
         <Layer name="grid-layer" listening={false}>
-          {gridLines}
+          {GRID_LINES}
         </Layer>
         <Layer name="content-layer">
           {images.map(img => {
@@ -673,16 +674,7 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
               // The picked label only matters for the single-pin editor
               selectedFunctionIndex={selectedPinIds.length === 1 && pin.id === primaryPinId ? selectedFunctionIndex : null}
               followOffset={groupDrag && groupDrag.id !== pin.id && selectedPinSet.has(pin.id) ? groupDrag : null}
-              onSelect={(id, functionIndex, e) => {
-                onSelectPin(id, functionIndex, e.evt.shiftKey || e.evt.ctrlKey || e.evt.metaKey);
-                onSelectImage(null);
-                if (onSelectLine) onSelectLine(null);
-              }}
-              onUpdate={onUpdatePin}
-              onDoubleClick={onDoubleClickPin}
-              onDragMove={handleGroupDragMove}
-              onDragEnd={handlePinDragEnd}
-              onRowDragEnd={handleRowDragEnd}
+              {...pinHandlers}
               anchorSize={anchorSize}
             />
           ))}
