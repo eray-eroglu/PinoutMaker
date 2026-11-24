@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getContentBounds } from './exportPdf';
+import { getContentBounds } from './viewport';
 import { LABEL_HEIGHT } from './pinLayout';
 
 describe('getContentBounds', () => {

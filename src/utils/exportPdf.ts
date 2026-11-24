@@ -1,9 +1,7 @@
 import Konva from 'konva';
 import type { LegendItem, LineData, PinData } from '../types';
 import type { LoadedImage } from './project';
-import { layoutPinLabels } from './pinLayout';
-import type { MeasureLabel } from './pinLayout';
-import { measureLabelText } from './labelMeasure';
+import { getContentBounds } from './viewport';
 
 export interface ExportPdfInput {
   images: LoadedImage[];
@@ -18,43 +16,6 @@ export interface ExportPdfInput {
   legendItems: LegendItem[];
   isLegendVisible: boolean;
 }
-
-interface Bounds { minX: number; minY: number; maxX: number; maxY: number }
-
-/** World-space bounding box of everything on the board, or null when the board is empty. */
-export const getContentBounds = (
-  { images, pins, lines, labelScale, gapSize }: Omit<ExportPdfInput, 'legendItems' | 'isLegendVisible' | 'scale'>,
-  measure: MeasureLabel = measureLabelText,
-): Bounds | null => {
-  const b: Bounds = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
-  const include = (x: number, y: number) => {
-    b.minX = Math.min(b.minX, x);
-    b.maxX = Math.max(b.maxX, x);
-    b.minY = Math.min(b.minY, y);
-    b.maxY = Math.max(b.maxY, y);
-  };
-
-  // Images are centered on x/y; the half-diagonal is a safe bound for any rotation.
-  images.forEach(img => {
-    const r = Math.sqrt(img.width * img.width + img.height * img.height) / 2;
-    include(img.x - r, img.y - r);
-    include(img.x + r, img.y + r);
-  });
-
-  pins.forEach(p => {
-    include(p.targetX, p.targetY);
-    // The whole label row, including function labels
-    const { bounds: row } = layoutPinLabels(p, labelScale, gapSize, measure);
-    include(row.x, row.y);
-    include(row.x + row.width, row.y + row.height);
-  });
-
-  lines.forEach(l => {
-    for (let i = 0; i + 1 < l.points.length; i += 2) include(l.points[i], l.points[i + 1]);
-  });
-
-  return Number.isFinite(b.minX) ? b : null;
-};
 
 const buildLegendGroup = (legendItems: LegendItem[], x: number, y: number, legendScale: number) => {
   const group = new Konva.Group({ x, y, scaleX: legendScale, scaleY: legendScale });

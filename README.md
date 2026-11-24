@@ -28,6 +28,14 @@ label and color them, draw connection lines, and export the result as a PDF.
 | <kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>Ctrl</kbd>+<kbd>V</kbd> | Copy / paste pin or line (repeated pastes are offset) |
 | <kbd>Del</kbd> / <kbd>Backspace</kbd> | Delete selection |
 | <kbd>Ctrl</kbd>+<kbd>S</kbd> | Save |
+| <kbd>←</kbd> <kbd>↑</kbd> <kbd>→</kbd> <kbd>↓</kbd> | Nudge selected pin label, line or image by 1 px (<kbd>Shift</kbd>: 10 px); one undo step per key hold |
+| <kbd>Alt</kbd>+arrows | Move the whole pin (label and anchor) |
+| <kbd>Ctrl</kbd>+<kbd>D</kbd> | Duplicate selected pin or line (does not touch the clipboard) |
+| <kbd>Shift</kbd>+<kbd>1</kbd> | Fit all content to the screen (also the button next to the scale indicator) |
+| <kbd>Ctrl</kbd>+<kbd>0</kbd> | Reset zoom to 100%, centred on the content |
+| <kbd>Ctrl</kbd>+<kbd>=</kbd> / <kbd>Ctrl</kbd>+<kbd>-</kbd> | Zoom in / out around the canvas centre |
+| <kbd>Esc</kbd> | Clear selection, cancel line drawing / add-pin mode |
+| <kbd>?</kbd> | Show / hide the shortcuts overlay |
 | Mouse wheel | Zoom |
 
 ## Development
