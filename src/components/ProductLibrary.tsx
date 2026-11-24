@@ -1,18 +1,22 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { X, Search, Package, ChevronDown, ImagePlus, Loader2, AlertCircle, BookOpen } from 'lucide-react';
 import { supabase } from '../supabaseClient';
+import { parsePinoutTemplate } from '../utils/pinoutTemplate';
 
 export interface Product {
   id: number;
   name: string;
   category: string;
   image_url: string;
+  /** Optional pinout template (jsonb). Untrusted: validate with parsePinoutTemplate before use. */
+  pinout?: unknown;
 }
 
 interface ProductLibraryProps {
   isOpen: boolean;
   onClose: () => void;
-  onImportProduct: (product: Product) => void;
+  /** withPinout is true only for products that offered a valid pinout and the user chose it. */
+  onImportProduct: (product: Product, withPinout: boolean) => void;
 }
 
 export const ProductLibrary = ({ isOpen, onClose, onImportProduct }: ProductLibraryProps) => {
@@ -244,8 +248,10 @@ export const ProductLibrary = ({ isOpen, onClose, onImportProduct }: ProductLibr
 };
 
 // --- Individual Product Card ---
-const ProductCard = ({ product, onImport }: { product: Product; onImport: (p: Product) => void }) => {
+const ProductCard = ({ product, onImport }: { product: Product; onImport: (p: Product, withPinout: boolean) => void }) => {
   const [imgError, setImgError] = useState(false);
+  // Only advertise a pinout that will actually import; a broken one falls back to image-only.
+  const hasPinout = useMemo(() => parsePinoutTemplate(product.pinout) !== null, [product.pinout]);
 
   return (
     <div className="rounded border border-gray-200 bg-white hover:border-blue-300 hover:shadow-sm transition-all overflow-hidden group">
@@ -265,15 +271,40 @@ const ProductCard = ({ product, onImport }: { product: Product; onImport: (p: Pr
 
       {/* Info + Button */}
       <div className="px-3 py-2">
-        <p className="text-xs font-semibold text-gray-700 mb-0.5 leading-tight">{product.name}</p>
+        <div className="flex items-start justify-between gap-2 mb-0.5">
+          <p className="text-xs font-semibold text-gray-700 leading-tight">{product.name}</p>
+          {hasPinout && (
+            <span className="shrink-0 text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-medium">
+              Pinout
+            </span>
+          )}
+        </div>
         <p className="text-[11px] text-gray-400 mb-2">{product.category}</p>
-        <button
-          onClick={() => onImport(product)}
-          className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded text-xs font-medium border border-blue-200 text-blue-600 bg-blue-50 hover:bg-blue-600 hover:text-white hover:border-blue-600 transition-colors cursor-pointer"
-        >
-          <ImagePlus size={12} />
-          Add to Canvas
-        </button>
+        {hasPinout ? (
+          <div className="space-y-1.5">
+            <button
+              onClick={() => onImport(product, true)}
+              className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded text-xs font-medium border border-blue-600 text-white bg-blue-600 hover:bg-blue-700 transition-colors cursor-pointer"
+            >
+              <ImagePlus size={12} />
+              Image + pinout
+            </button>
+            <button
+              onClick={() => onImport(product, false)}
+              className="w-full flex items-center justify-center gap-1.5 py-1 rounded text-xs font-medium border border-gray-300 text-gray-600 bg-white hover:bg-gray-100 transition-colors cursor-pointer"
+            >
+              Image only
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => onImport(product, false)}
+            className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded text-xs font-medium border border-blue-200 text-blue-600 bg-blue-50 hover:bg-blue-600 hover:text-white hover:border-blue-600 transition-colors cursor-pointer"
+          >
+            <ImagePlus size={12} />
+            Add to Canvas
+          </button>
+        )}
       </div>
     </div>
   );
