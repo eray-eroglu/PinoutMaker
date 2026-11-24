@@ -11,6 +11,10 @@ import { DEFAULT_PIN_COLOR, scaleLabelsAroundAnchors } from './utils/pinUtils';
 import { loadImageElement, loadProjectImages, parseProject, serializeProject } from './utils/project';
 import type { LoadedImage } from './utils/project';
 import { exportPdf } from './utils/exportPdf';
+import { clearAutosave, loadAutosave } from './utils/autosave';
+import type { AutosaveRecord } from './utils/autosave';
+import { useAutosave } from './hooks/useAutosave';
+import { RestoreBanner } from './components/RestoreBanner';
 
 type HistoryState = { pins: PinData[]; lines: LineData[]; images: LoadedImage[]; labelScale: number | null };
 
@@ -51,6 +55,31 @@ function App() {
     if (labelScale === null) setLabelScale(effectiveLabelScale);
     return effectiveLabelScale;
   };
+
+  // --- Autosave ---
+  // The snapshot found at startup stays untouched until the user restores or discards it.
+  const [recoveredAutosave, setRecoveredAutosave] = useState<AutosaveRecord | null>(null);
+  const [autosaveChecked, setAutosaveChecked] = useState(false);
+  const [isLoadingProject, setIsLoadingProject] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadAutosave().then(record => {
+      if (cancelled) return;
+      setRecoveredAutosave(record);
+      setAutosaveChecked(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useAutosave(
+    { images, pins, lines, scale, position, gapSize, legendItems, isLegendVisible, anchorSize, labelScale },
+    // Not while loading: pins are set before the images finish loading, and that half-loaded
+    // state must not replace a good snapshot.
+    autosaveChecked && !recoveredAutosave && !isLoadingProject,
+  );
 
   const stageRef = useRef<Konva.Stage>(null);
   const copiedPinRef = useRef<PinData | null>(null); // For Ctrl+C/V
@@ -374,24 +403,15 @@ function App() {
     });
   };
 
-  const handleLoadProject = async () => {
-    let picked;
-    try {
-      picked = await pickProjectFile();
-    } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') return;
-      console.error('Failed to open project file', error);
-      return;
-    }
-    if (!picked) return;
-
+  /** Single entry point for opening a project (file or autosave). Returns false for invalid content. */
+  const openProject = async (content: string, handle: FileSystemFileHandle | null): Promise<boolean> => {
     let data;
     try {
-      data = parseProject(picked.content);
+      data = parseProject(content);
     } catch (e) {
       console.error('Failed to parse project file', e);
       alert('Invalid project file');
-      return;
+      return false;
     }
 
     // A new project starts with a clean slate: no undo into the previous one, no stale selection.
@@ -401,8 +421,9 @@ function App() {
     setIsAddingLine(false);
     copiedPinRef.current = null;
     copiedLineRef.current = null;
-    setFileHandle(picked.handle);
+    setFileHandle(handle);
 
+    setIsLoadingProject(true);
     setImages([]);
     setPins(data.pins);
     setLines(data.lines);
@@ -416,9 +437,37 @@ function App() {
 
     const { loaded, failed } = await loadProjectImages(data.images);
     setImages(loaded);
+    setIsLoadingProject(false);
     if (failed > 0) {
       alert(`${failed} image(s) in this project could not be loaded.`);
     }
+    return true;
+  };
+
+  const handleLoadProject = async () => {
+    let picked;
+    try {
+      picked = await pickProjectFile();
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      console.error('Failed to open project file', error);
+      return;
+    }
+    if (!picked) return;
+    await openProject(picked.content, picked.handle);
+  };
+
+  const handleRestoreAutosave = async () => {
+    const record = recoveredAutosave;
+    if (!record) return;
+    setRecoveredAutosave(null); // hides the banner and lets autosave resume (paused while loading)
+    // A snapshot that no longer parses is useless: drop it rather than offering it again.
+    if (!(await openProject(JSON.stringify(record.project), null))) clearAutosave();
+  };
+
+  const handleDiscardAutosave = () => {
+    setRecoveredAutosave(null);
+    void clearAutosave();
   };
 
   const handleExportPdf = async () => {
@@ -495,36 +544,45 @@ function App() {
         onImportProduct={handleImportProduct}
       />
       <div className='flex flex-1 overflow-hidden'>
-        <CanvasStage
-          ref={stageRef}
-          images={images}
-          onUpdateImage={updateImage}
-          selectedImageId={selectedImageId}
-          onSelectImage={setSelectedImageId}
-          pins={pins}
-          selectedPinId={selectedPinId}
-          onSelectPin={selectPin}
-          onUpdatePin={updatePin}
-          onDoubleClickPin={handlePinDoubleClick}
-          lines={lines}
-          selectedLineId={selectedLineId}
-          onSelectLine={selectLine}
-          onUpdateLine={updateLine}
-          isAddingLine={isAddingLine}
-          onCreateLine={createLineAt}
-          isAddingPin={isAddingPin}
-          onCreatePin={createPinAt}
-          scale={scale}
-          setScale={setScale}
-          position={position}
-          setPosition={setPosition}
-          gapSize={gapSize}
-          legendItems={legendItems}
-          isLegendVisible={isLegendVisible}
-          anchorSize={anchorSize}
-          labelScale={effectiveLabelScale}
-          onPushHistory={pushHistory}
-        />
+        <div className='relative flex flex-1 min-w-0'>
+          {recoveredAutosave && (
+            <RestoreBanner
+              savedAt={recoveredAutosave.savedAt}
+              onRestore={handleRestoreAutosave}
+              onDiscard={handleDiscardAutosave}
+            />
+          )}
+          <CanvasStage
+            ref={stageRef}
+            images={images}
+            onUpdateImage={updateImage}
+            selectedImageId={selectedImageId}
+            onSelectImage={setSelectedImageId}
+            pins={pins}
+            selectedPinId={selectedPinId}
+            onSelectPin={selectPin}
+            onUpdatePin={updatePin}
+            onDoubleClickPin={handlePinDoubleClick}
+            lines={lines}
+            selectedLineId={selectedLineId}
+            onSelectLine={selectLine}
+            onUpdateLine={updateLine}
+            isAddingLine={isAddingLine}
+            onCreateLine={createLineAt}
+            isAddingPin={isAddingPin}
+            onCreatePin={createPinAt}
+            scale={scale}
+            setScale={setScale}
+            position={position}
+            setPosition={setPosition}
+            gapSize={gapSize}
+            legendItems={legendItems}
+            isLegendVisible={isLegendVisible}
+            anchorSize={anchorSize}
+            labelScale={effectiveLabelScale}
+            onPushHistory={pushHistory}
+          />
+        </div>
         <Sidebar
           selectedPin={selectedPin}
           onUpdatePin={updatePin}
