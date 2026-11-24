@@ -8,7 +8,8 @@ import type { Product } from './components/ProductLibrary';
 import type { PinData, LineData, LegendItem } from './types';
 import { DEFAULT_ANCHOR_SIZE, DEFAULT_GAP_SIZE, DEFAULT_LEGEND_ITEMS } from './constants';
 import { DEFAULT_PIN_COLOR, scaleLabelsAroundAnchors } from './utils/pinUtils';
-import { loadImageElement, loadProjectImages, parseProject, serializeProject } from './utils/project';
+import { exportPinoutTemplate, importPinoutTemplate, parsePinoutTemplate, pinoutFileName } from './utils/pinoutTemplate';
+import { loadImageElement,loadProjectImages, parseProject, serializeProject } from './utils/project';
 import type { LoadedImage } from './utils/project';
 import { exportPdf } from './utils/exportPdf';
 import { clearAutosave, loadAutosave } from './utils/autosave';
@@ -150,6 +151,7 @@ function App() {
     setImages(prev => [...prev, newImg]);
     clearSelection();
     setSelectedImageId(newImg.id);
+    return newImg;
   };
 
   const handleImageUpload = (file: File) => {
@@ -165,14 +167,49 @@ function App() {
     reader.readAsDataURL(file);
   };
 
-  const handleImportProduct = async (product: Product) => {
+  const handleImportProduct = async (product: Product, withPinout = false) => {
     if (!product.image_url) return;
+    let element: HTMLImageElement;
     try {
-      addImage(product.image_url, await loadImageElement(product.image_url), 50, 50);
-      setIsLibraryOpen(false);
+      element = await loadImageElement(product.image_url);
     } catch {
       alert(`Failed to load image for "${product.name}". Please check the image URL.`);
+      return;
     }
+    // addImage records the one history step; the pinout below rides along with it, so a single
+    // undo removes the image and its pins together.
+    const image = addImage(product.image_url, element, 50, 50);
+    setIsLibraryOpen(false);
+    if (!withPinout) return;
+
+    const template = parsePinoutTemplate(product.pinout);
+    if (!template) {
+      console.warn(`[PinoutMaker] Ignoring invalid pinout template for "${product.name}"; imported the image only.`);
+      return;
+    }
+    const imported = importPinoutTemplate(template, image, labelScale);
+    if (labelScale === null) setLabelScale(imported.labelScale);
+    setPins(prev => [...prev, ...imported.pins]);
+    setLines(prev => [...prev, ...imported.lines]);
+    // The legend is not part of undo; only add rows the project doesn't have yet.
+    setLegendItems(prev => {
+      const known = new Set(prev.map(i => i.text.trim().toLowerCase()));
+      const added = imported.legendItems.filter(i => !known.has(i.text.trim().toLowerCase()));
+      return added.length ? [...prev, ...added] : prev;
+    });
+  };
+
+  /** Downloads the pins and lines, relative to the selected image, as a library pinout template. */
+  const handleExportPinoutTemplate = () => {
+    const image = images.find(img => img.id === selectedImageId);
+    if (!image) return;
+    const template = exportPinoutTemplate(image, pins, lines, effectiveLabelScale, legendItems);
+    const url = URL.createObjectURL(new Blob([JSON.stringify(template, null, 2)], { type: 'application/json' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = pinoutFileName(image.src);
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const handleRotateImage = () => {
@@ -591,6 +628,7 @@ function App() {
           selectedImage={selectedImage}
           onUpdateImage={updateImage}
           onPushHistory={pushHistory}
+          onExportPinoutTemplate={handleExportPinoutTemplate}
           gapSize={gapSize}
           onGapSizeChange={setGapSize}
           legendItems={legendItems}

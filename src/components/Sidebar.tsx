@@ -12,6 +12,8 @@ interface SidebarProps {
   selectedLine: LineData | null;
   onUpdateLine: (line: LineData, saveHistory?: boolean) => void;
   onPushHistory: () => void;
+  /** Downloads the pins/lines relative to the selected image as a Boardoza library pinout (JSON). */
+  onExportPinoutTemplate: () => void;
   gapSize: number;
   onGapSizeChange: (size: number) => void;
   legendItems: LegendItem[];
@@ -45,7 +47,7 @@ const COLORS = [
 export const Sidebar = ({
   selectedPin, onUpdatePin, selectedImage, onUpdateImage, 
   selectedLine, onUpdateLine,
-  onPushHistory, gapSize, onGapSizeChange,
+  onPushHistory, onExportPinoutTemplate, gapSize, onGapSizeChange,
   legendItems, onLegendItemsChange, isLegendVisible, onLegendVisibilityChange, anchorSize, onAnchorSizeChange,
   labelScale, onLabelScaleChange,
 }: SidebarProps) => {
@@ -298,6 +300,13 @@ export const Sidebar = ({
             <p className="text-xs text-gray-400">
               Aspect ratio is maintained automatically.
             </p>
+            <button
+              onClick={onExportPinoutTemplate}
+              className="text-xs text-gray-500 hover:text-gray-700 underline cursor-pointer"
+              title="Download the current pins and lines, relative to this image, as a ready-made pinout for the product library"
+            >
+              Export as library pinout
+            </button>
           </div>
           <hr className="my-4 border-gray-300" />
         </>
