@@ -4,6 +4,7 @@ import { nudgeImage, nudgeLine, nudgePin } from './nudge';
 import { duplicateLine, duplicatePin } from './duplicate';
 import type { LineData, PinData } from '../types';
 import type { LoadedImage } from './project';
+import { LABEL_HEIGHT } from './pinLayout';
 
 const vp = { width: 1000, height: 600 };
 
@@ -82,5 +83,22 @@ describe('duplicate', () => {
     const d = duplicateLine(line);
     expect(d.id).not.toBe(line.id);
     expect(d.points).toEqual([20, 20, 30, 20, 30, 30]);
+  });
+});
+
+describe('getContentBounds with function rows', () => {
+  it('includes the whole label row, including function labels', () => {
+    const bounds = getContentBounds({
+      images: [],
+      lines: [],
+      labelScale: 1,
+      gapSize: 10,
+      pins: [{
+        id: 'p', x: 100, y: 0, targetX: 200, targetY: 12, text: 'PA0', color: '#000', isPwm: false,
+        // The anchor is on the right, so the row grows left: 100 → 30 → -40
+        functions: [{ id: 'a', text: 'ADC0', color: '#000' }, { id: 'b', text: 'CTS2', color: '#000' }],
+      }],
+    }, () => 60);
+    expect(bounds).toEqual({ minX: -40, minY: 0, maxX: 200, maxY: LABEL_HEIGHT });
   });
 });

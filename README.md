@@ -3,7 +3,7 @@
 A browser-based editor for creating pinout diagrams of electronics boards.
 
 Import a board photo (or pick one from the Boardoza product library), drop pins on it,
-label and color them, draw connection lines, and export the result as a PDF.
+label and color them, draw connection lines, and export the result as a PDF, SVG or PNG.
 
 ## Features
 
@@ -15,10 +15,11 @@ label and color them, draw connection lines, and export the result as a PDF.
 - **Alignment** – labels snap to each other's edges and to a configurable gap while dragging
   (hold <kbd>Ctrl</kbd> to disable).
 - **Lines** – orthogonal polylines: click to add corners, double-click to finish, <kbd>Esc</kbd> to cancel.
-- **Legend table** – editable color legend, shown on the canvas and in the PDF.
+- **Legend table** – editable color legend, shown on the canvas and in exports.
 - **Projects** – save/load as JSON (uses the File System Access API where available, so
   <kbd>Ctrl</kbd>+<kbd>S</kbd> overwrites the open file). Older project formats are migrated on load.
-- **PDF export** – A4, fitted to all content, with the legend.
+- **Export** – vector PDF (A4, selectable text), standalone SVG for web pages, or high-resolution
+  PNG (×1/×2/×4, optional transparent background); the legend can be included or left out.
 
 ### Shortcuts
 
@@ -63,7 +64,7 @@ app still works; only the library panel is disabled.
 
 The anon key is public by design, so make sure Row Level Security on `products` only allows
 `select`. Library images must be served with CORS headers (Supabase Storage does this), otherwise
-PDF export cannot read them from the canvas.
+exports cannot read their pixels.
 
 ## Project structure
 
@@ -81,7 +82,7 @@ src/
     pinUtils.ts           label position, nudging, smart colors
     imageResize.ts        rotation-aware resize math
     project.ts            project (de)serialization, migration, image loading
-    exportPdf.ts          PDF export
+    export/               scene model (scene.ts) + PDF, SVG and PNG renderers
     lineUtils.ts          Manhattan paths and PWM waves
 ```
 

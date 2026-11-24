@@ -2,7 +2,7 @@ import React, { useRef, useLayoutEffect } from 'react';
 import { Line, Circle, Group } from 'react-konva';
 import Konva from 'konva';
 import type { LineData } from '../types';
-import { calculateManhattanPath } from '../utils/lineUtils';
+import { buildOrthogonalPoints } from '../utils/lineUtils';
 
 interface LineComponentProps {
   line: LineData;
@@ -15,30 +15,6 @@ interface LineComponentProps {
     e: Konva.KonvaEventObject<MouseEvent | TouchEvent>
   ) => void;
   onUpdate: (line: LineData, saveHistory?: boolean) => void;
-}
-
-/**
- * Build the full Konva points array for a multi-point polyline where every
- * consecutive pair of user-defined anchors is connected by an orthogonal
- * (Manhattan) two-segment path.
- */
-function buildOrthogonalPoints(anchors: number[]): number[] {
-  if (anchors.length < 4) return anchors;
-  const result: number[] = [];
-  for (let i = 0; i < anchors.length - 2; i += 2) {
-    const x1 = anchors[i];
-    const y1 = anchors[i + 1];
-    const x2 = anchors[i + 2];
-    const y2 = anchors[i + 3];
-    const seg = calculateManhattanPath(x1, y1, x2, y2);
-    if (i === 0) {
-      result.push(...seg);
-    } else {
-      // Skip the first point of the segment (same as previous end point)
-      result.push(...seg.slice(2));
-    }
-  }
-  return result;
 }
 
 export const LineComponent: React.FC<LineComponentProps> = ({

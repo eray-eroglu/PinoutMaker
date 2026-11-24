@@ -1,5 +1,7 @@
 import { useRef } from 'react';
-import { Save, Upload, Plus, Trash2, RotateCw, FileDown, FolderOpen, BookOpen } from 'lucide-react';
+import { Save, Upload, Plus, Trash2, RotateCw, FolderOpen, BookOpen } from 'lucide-react';
+import { ExportMenu } from './ExportMenu';
+import type { ExportOptions } from '../utils/export';
 
 interface TopBarProps {
   onImport: (file: File) => void;
@@ -8,7 +10,9 @@ interface TopBarProps {
   onRotateImage: () => void;
   onSave: () => void;
   onLoad: () => void;
-  onExportPdf: () => void;
+  onExport: (options: ExportOptions) => void;
+  /** Default for the export menu's "Include legend" option. */
+  isLegendVisible: boolean;
   isPinSelected: boolean;
   isImageLoaded: boolean;
   isAddingPin: boolean;
@@ -25,7 +29,8 @@ export const TopBar = ({
   onRotateImage,
   onSave,
   onLoad,
-  onExportPdf,
+  onExport,
+  isLegendVisible,
   isPinSelected,
   isImageLoaded,
   isAddingPin,
@@ -104,15 +109,7 @@ export const TopBar = ({
         </div>
       </button>
 
-      <button
-        onClick={onExportPdf}
-        className='group relative flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-300 rounded hover:bg-gray-50 text-gray-700 text-sm cursor-pointer transition-colors'
-      >
-        <FileDown size={16} /> Export PDF
-        <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 delay-500 bg-gray-800 text-white text-xs rounded px-2 py-1 pointer-events-none z-50 whitespace-nowrap shadow-md">
-          Export your board and pin table as a high-quality PDF
-        </div>
-      </button>
+      <ExportMenu onExport={onExport} isLegendVisible={isLegendVisible} />
 
       <button
         onClick={onToggleLibrary}
