@@ -14,6 +14,14 @@ label and color them, draw connection lines, and export the result as a PDF.
   you pick one by hand.
 - **Alignment** – labels snap to each other's edges and to a configurable gap while dragging
   (hold <kbd>Ctrl</kbd> to disable).
+- **Headers** – *Add Header*: click the first and the last pad of a pin row, then choose the pin
+  count, naming (prefix + start + step, or blank) and label side (Auto faces away from the board).
+  The pins are spaced evenly with their labels in a clean column (left/right) or fanned out in
+  stacked rows (above/below), all in one undo step.
+- **Pin tables** – *Pin table…* (or *Fill header from table…* on a header pin) pastes a table from
+  a datasheet, Excel/Sheets (tab-separated) or CSV (`,`/`;`, quoted cells): one line per pin, name
+  first, then its functions. Names and functions get smart colours; *Reverse order* fills the
+  header from its last pin.
 - **Lines** – orthogonal polylines: click to add corners, double-click to finish, <kbd>Esc</kbd> to cancel.
 - **Legend table** – editable color legend, shown on the canvas and in the PDF.
 - **Projects** – save/load as JSON (uses the File System Access API where available, so
@@ -34,7 +42,9 @@ label and color them, draw connection lines, and export the result as a PDF.
 | <kbd>Shift</kbd>+<kbd>1</kbd> | Fit all content to the screen (also the button next to the scale indicator) |
 | <kbd>Ctrl</kbd>+<kbd>0</kbd> | Reset zoom to 100%, centred on the content |
 | <kbd>Ctrl</kbd>+<kbd>=</kbd> / <kbd>Ctrl</kbd>+<kbd>-</kbd> | Zoom in / out around the canvas centre |
-| <kbd>Esc</kbd> | Clear selection, cancel line drawing / add-pin mode |
+| <kbd>Shift</kbd> (Add Header) | Keep the header exactly horizontal / vertical while picking the last pad |
+| <kbd>Ctrl</kbd>+<kbd>Enter</kbd> | Apply the pin table (in the pin table dialog) |
+| <kbd>Esc</kbd> | Clear selection, cancel line drawing / add-pin / add-header mode |
 | <kbd>?</kbd> | Show / hide the shortcuts overlay |
 | Mouse wheel | Zoom |
 

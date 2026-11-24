@@ -78,6 +78,11 @@ describe('duplicate', () => {
     expect(d.id).not.toBe(pin.id);
     expect(d).toMatchObject({ x: 30, y: 40, targetX: 25, targetY: 26 });
   });
+  it('takes a duplicated pin out of its header', () => {
+    const d = duplicatePin({ ...pin, headerId: 'h', headerIndex: 2 });
+    expect(d.headerId).toBeUndefined();
+    expect(d.headerIndex).toBeUndefined();
+  });
   it('gives a line a new id and offset points', () => {
     const d = duplicateLine(line);
     expect(d.id).not.toBe(line.id);

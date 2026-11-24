@@ -1,6 +1,7 @@
 import type { BoardImage, LegendItem, LegendMode, LineData, PinData, PinFunction, ProjectData } from '../types';
 import { DEFAULT_ANCHOR_SIZE, DEFAULT_GAP_SIZE, DEFAULT_LEGEND_ITEMS } from '../constants';
 import { DEFAULT_PIN_COLOR, migrateLegacyPin } from './pinUtils';
+import { withoutHeader } from './header';
 
 export interface LoadedImage extends BoardImage {
   element: HTMLImageElement;
@@ -65,6 +66,17 @@ const normalizeFunctions = (pin: PinData): PinData => {
   };
 };
 
+/**
+ * Header membership is optional. A pin with only one of the two fields, or with values of the
+ * wrong type, is treated as a stand-alone pin rather than guessing its place in a header.
+ */
+const normalizeHeader = (pin: PinData): PinData => {
+  if (pin.headerId === undefined && pin.headerIndex === undefined) return pin;
+  const valid = typeof pin.headerId === 'string' && pin.headerId !== ''
+    && typeof pin.headerIndex === 'number' && Number.isInteger(pin.headerIndex) && pin.headerIndex >= 0;
+  return valid ? pin : withoutHeader(pin);
+};
+
 /** Parses a saved project file, filling defaults and migrating legacy formats. Throws on invalid JSON. */
 export const parseProject = (content: string): ParsedProject => {
   const data = JSON.parse(content) as Partial<ProjectData>;
@@ -91,7 +103,7 @@ export const parseProject = (content: string): ParsedProject => {
     return l;
   });
 
-  const migratedPins = (isLegacy ? pins.map(p => migrateLegacyPin(p, savedScale)) : pins).map(normalizeFunctions);
+  const migratedPins = (isLegacy ? pins.map(p => migrateLegacyPin(p, savedScale)) : pins).map(normalizeFunctions).map(normalizeHeader);
 
   return {
     images,

@@ -35,6 +35,13 @@ export interface PinData {
    * They have no stored position; layoutPinLabels derives it. Missing in older files.
    */
   functions?: PinFunction[];
+  /**
+   * Pins created together by the header tool share this id, so a pin table can fill the whole
+   * header at once. Missing for pins placed one by one (and in older files).
+   */
+  headerId?: string;
+  /** Position of the pin in its header, 0 = the first pad clicked. Only set together with headerId. */
+  headerIndex?: number;
 }
 
 export interface LineData {

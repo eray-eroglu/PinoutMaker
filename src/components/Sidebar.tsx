@@ -46,6 +46,10 @@ interface SidebarProps {
   /** World size of one label unit. */
   labelScale: number;
   onLabelScaleChange: (labelScale: number) => void;
+  /** Where the selected pin sits in its header (index is 0-based), or null for a stand-alone pin. */
+  selectedPinHeader?: { index: number; count: number } | null;
+  /** Opens the pin table dialog for the selected pin's header. */
+  onOpenPinTable?: () => void;
 }
 
 const COLORS = [
@@ -103,7 +107,7 @@ export const Sidebar = ({
   onPushHistory, onExportPinoutTemplate, gapSize, onGapSizeChange,
   legendItems, onLegendItemsChange, isLegendVisible, onLegendVisibilityChange,
   legendMode, onLegendModeChange, legendShowCounts, onLegendShowCountsChange, anchorSize, onAnchorSizeChange,
-  labelScale, onLabelScaleChange,
+  labelScale, onLabelScaleChange, selectedPinHeader, onOpenPinTable,
 }: SidebarProps) => {
   const [customStep, setCustomStep] = useState<number>(5);
   const [isTableSettingsExpanded, setIsTableSettingsExpanded] = useState<boolean>(false);
@@ -485,6 +489,20 @@ export const Sidebar = ({
         </div>
       ) : selectedPin ? (
         <div className='space-y-4'>
+          {selectedPinHeader && (
+            <div className='flex items-center justify-between gap-2 rounded border border-blue-100 bg-blue-50 px-2 py-1.5 text-xs text-blue-800'>
+              <span>Header pin {selectedPinHeader.index + 1} of {selectedPinHeader.count}</span>
+              {onOpenPinTable && (
+                <button
+                  onClick={onOpenPinTable}
+                  className='font-medium text-blue-700 hover:text-blue-900 underline cursor-pointer'
+                  title='Paste a pin table (datasheet, Excel, CSV) to name every pin of this header'
+                >
+                  Fill header from table…
+                </button>
+              )}
+            </div>
+          )}
           <div>
             <label className='block text-sm font-medium text-gray-600 mb-1'>
               Pin Name
