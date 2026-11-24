@@ -14,7 +14,7 @@ import { loadImageElement, loadProjectImages, parseProject, serializeProject } f
 import type { LoadedImage } from './utils/project';
 import { exportDiagram } from './utils/export';
 import type { ExportOptions } from './utils/export';
-import { clearAutosave, loadAutosave } from './utils/autosave';
+import { clearRecoveredAutosave, takeAutosaveForRecovery } from './utils/autosave';
 import type { AutosaveRecord } from './utils/autosave';
 import { useAutosave } from './hooks/useAutosave';
 import { RestoreBanner } from './components/RestoreBanner';
@@ -85,14 +85,15 @@ function App() {
   };
 
   // --- Autosave ---
-  // The snapshot found at startup stays untouched until the user restores or discards it.
+  // The snapshot found at startup is moved to its own slot, where it stays untouched until the
+  // user restores or discards it; meanwhile autosave keeps protecting the new session.
   const [recoveredAutosave, setRecoveredAutosave] = useState<AutosaveRecord | null>(null);
   const [autosaveChecked, setAutosaveChecked] = useState(false);
   const [isLoadingProject, setIsLoadingProject] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    loadAutosave().then(record => {
+    takeAutosaveForRecovery().then(record => {
       if (cancelled) return;
       setRecoveredAutosave(record);
       setAutosaveChecked(true);
@@ -104,9 +105,9 @@ function App() {
 
   useAutosave(
     { images, pins, lines, scale, position, gapSize, legendItems, isLegendVisible, legendMode, legendShowCounts, anchorSize, labelScale },
-    // Not while loading: pins are set before the images finish loading, and that half-loaded
-    // state must not replace a good snapshot.
-    autosaveChecked && !recoveredAutosave && !isLoadingProject,
+    // Not before the startup snapshot was moved aside, and not while loading: pins are set
+    // before the images finish loading, and that half-loaded state must not replace a good snapshot.
+    autosaveChecked && !isLoadingProject,
   );
 
   const selectedPinIds = existingIds(rawSelectedPinIds, pins);
@@ -646,11 +647,11 @@ function App() {
     setAnchorSize(data.anchorSize);
     setLabelScale(data.labelScale);
 
-    const { loaded, failed } = await loadProjectImages(data.images);
+    const { images: loaded, failed } = await loadProjectImages(data.images);
     setImages(loaded);
     setIsLoadingProject(false);
     if (failed > 0) {
-      alert(`${failed} image(s) in this project could not be loaded.`);
+      alert(`${failed} image(s) in this project could not be loaded. They are shown as grey placeholders and stay in the project when you save.`);
     }
     return true;
   };
@@ -671,14 +672,19 @@ function App() {
   const handleRestoreAutosave = async () => {
     const record = recoveredAutosave;
     if (!record) return;
-    setRecoveredAutosave(null); // hides the banner and lets autosave resume (paused while loading)
-    // A snapshot that no longer parses is useless: drop it rather than offering it again.
-    if (!(await openProject(JSON.stringify(record.project), null))) clearAutosave();
+    // Restoring resets undo, so work done since startup would be gone for good
+    const hasWork = images.length > 0 || pins.length > 0 || lines.length > 0;
+    if (hasWork && !window.confirm('Replace the current canvas with the recovered work?')) return;
+    setRecoveredAutosave(null);
+    // Once open, the restored project is autosaved as the current session. A snapshot that
+    // no longer parses is useless, so it is dropped either way.
+    void clearRecoveredAutosave();
+    await openProject(JSON.stringify(record.project), null);
   };
 
   const handleDiscardAutosave = () => {
     setRecoveredAutosave(null);
-    void clearAutosave();
+    void clearRecoveredAutosave();
   };
 
   const handleExport = async (options: ExportOptions) => {

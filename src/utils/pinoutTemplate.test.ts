@@ -4,6 +4,7 @@ import {
   exportPinoutTemplate, importPinoutTemplate, parsePinoutTemplate, pinoutFileName,
 } from './pinoutTemplate';
 import type { PinoutTemplate, PlacedImage } from './pinoutTemplate';
+import { DEFAULT_PIN_COLOR } from './pinUtils';
 
 const pin = (over: Partial<PinData> = {}): PinData => ({
   id: 'p1', x: 120, y: -40, targetX: 100, targetY: -50, text: 'PA0', color: '#1d4ed8', isPwm: false, ...over,
@@ -148,6 +149,22 @@ describe('parsePinoutTemplate', () => {
     const t = parsePinoutTemplate({ ...template(), pins: [{ x: 1, y: 2, targetX: 3, targetY: 4 }] });
     expect(t?.pins[0]).toMatchObject({ text: '', isPwm: false });
     expect(typeof t?.pins[0].color).toBe('string');
+  });
+
+  it('cleans function labels like a project file, so a bad value cannot crash rendering', () => {
+    const parse = (functions: unknown) =>
+      parsePinoutTemplate({ ...template(), pins: [{ ...pin(), functions }] })!.pins[0];
+    expect(parse('oops').functions).toBeUndefined();
+    expect(parse(5).functions).toBeUndefined();
+    expect(parse([null, 7, 'ADC0', { text: 3, color: 42, textColor: {} }, { text: 'TX', color: '#123456' }]).functions).toEqual([
+      { id: expect.any(String), text: '', color: DEFAULT_PIN_COLOR },
+      { id: expect.any(String), text: 'TX', color: '#123456' },
+    ]);
+  });
+
+  it('drops malformed header membership', () => {
+    const t = parsePinoutTemplate({ ...template(), pins: [{ ...pin(), headerId: 'h', headerIndex: 'x' }] });
+    expect(t?.pins[0].headerId).toBeUndefined();
   });
 
   it.each([

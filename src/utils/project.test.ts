@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseProject, serializeProject } from './project';
+import { loadProjectImages, MISSING_IMAGE_SIZE, parseProject, serializeProject } from './project';
 import { DEFAULT_LEGEND_ITEMS } from '../constants';
 import { DEFAULT_PIN_COLOR } from './pinUtils';
 import type { PinData } from '../types';
@@ -140,5 +140,36 @@ describe('parseProject header fields', () => {
       expect(pin.headerId).toBeUndefined();
       expect(pin.headerIndex).toBeUndefined();
     }
+  });
+});
+
+describe('loadProjectImages', () => {
+  const ok = { id: 'ok', src: 'data:image/png;base64,OK', x: 0, y: 0, width: 30, height: 20, rotation: 0 };
+  const broken = { id: 'bad', src: 'http://127.0.0.1:9/board.png', x: 5, y: 6, width: 400, height: 300, rotation: 90 };
+  const load = async (src: string) => {
+    if (src === broken.src) throw new Error('unreachable');
+    return { width: 30, height: 20 } as HTMLImageElement;
+  };
+
+  it('keeps an image that failed to load as a placeholder, in order', async () => {
+    const result = await loadProjectImages([broken, ok], load);
+    expect(result.failed).toBe(1);
+    expect(result.images.map(i => i.id)).toEqual(['bad', 'ok']);
+    expect(result.images[0]).toMatchObject({ ...broken, element: null });
+    expect(result.images[1].element).not.toBeNull();
+  });
+
+  it('round-trips a failed image through save and load', async () => {
+    const { images } = await loadProjectImages([broken], load);
+    const json = JSON.stringify(serializeProject({
+      images, pins: [], lines: [], scale: 1, position: { x: 0, y: 0 }, gapSize: 12,
+      legendItems: [], isLegendVisible: true, legendMode: 'all', legendShowCounts: false, anchorSize: 5, labelScale: null,
+    }));
+    expect(parseProject(json).images).toEqual([broken]);
+  });
+
+  it('gives a placeholder without a stored size a default size', async () => {
+    const { images } = await loadProjectImages([{ id: 'legacy', src: broken.src, x: 0, y: 0, rotation: 0 }], load);
+    expect(images[0]).toMatchObject(MISSING_IMAGE_SIZE);
   });
 });

@@ -101,7 +101,8 @@ export interface Scene {
 }
 
 export interface ExportSceneInput {
-  images: (BoardImage & { element?: HTMLImageElement })[];
+  /** element null: the image could not be loaded (a placeholder in the editor) and is left out. */
+  images: (BoardImage & { element?: HTMLImageElement | null })[];
   pins: PinData[];
   lines: LineData[];
   /** World size of one label unit. */
@@ -289,6 +290,7 @@ export const buildExportScene = (input: ExportSceneInput, measure: MeasureLabel 
   const primitives: ScenePrimitive[] = [];
 
   for (const img of input.images) {
+    if (img.element === null) continue;
     primitives.push({
       kind: 'image', src: img.src, element: img.element,
       cx: img.x, cy: img.y, width: img.width, height: img.height, rotation: img.rotation ?? 0,

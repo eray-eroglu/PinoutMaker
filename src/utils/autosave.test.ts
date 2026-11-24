@@ -2,11 +2,14 @@ import 'fake-indexeddb/auto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   clearAutosave,
+  clearRecoveredAutosave,
   createDebouncer,
   formatRelativeTime,
   isProjectEmpty,
   loadAutosave,
+  loadRecoveredAutosave,
   saveAutosave,
+  takeAutosaveForRecovery,
 } from './autosave';
 import { parseProject, serializeProject } from './project';
 import type { ProjectState } from './project';
@@ -25,6 +28,7 @@ const withPin = (): ProjectState => ({ ...baseState, pins: [pin], labelScale: 0.
 
 beforeEach(async () => {
   await clearAutosave();
+  await clearRecoveredAutosave();
 });
 
 afterEach(() => {
@@ -119,6 +123,48 @@ describe('autosave storage', () => {
     });
     await expect(saveAutosave(serializeProject(withPin()))).resolves.toBe(false);
     await expect(loadAutosave()).resolves.toBeNull();
+  });
+});
+
+describe('recovering the previous session', () => {
+  it('moves the snapshot aside, so the new session can autosave without overwriting it', async () => {
+    await saveAutosave(serializeProject(withPin()), 1);
+
+    const found = await takeAutosaveForRecovery();
+    expect(found?.savedAt).toBe(1);
+    expect(await loadAutosave()).toBeNull();
+
+    // The new session writes `current`; the recovered snapshot is untouched
+    await saveAutosave(serializeProject({ ...withPin(), gapSize: 40 }), 2);
+    expect((await loadRecoveredAutosave())?.savedAt).toBe(1);
+    expect((await loadAutosave())?.savedAt).toBe(2);
+  });
+
+  it('offers a recovered snapshot again after a reload without a newer one', async () => {
+    await saveAutosave(serializeProject(withPin()), 1);
+    await takeAutosaveForRecovery();
+    expect((await takeAutosaveForRecovery())?.savedAt).toBe(1);
+  });
+
+  it('prefers the latest session over an older recovered snapshot', async () => {
+    await saveAutosave(serializeProject(withPin()), 1);
+    await takeAutosaveForRecovery();
+    await saveAutosave(serializeProject(withPin()), 2);
+    expect((await takeAutosaveForRecovery())?.savedAt).toBe(2);
+    expect((await loadRecoveredAutosave())?.savedAt).toBe(2);
+  });
+
+  it('discarding deletes only the recovered snapshot', async () => {
+    await saveAutosave(serializeProject(withPin()), 1);
+    await takeAutosaveForRecovery();
+    await saveAutosave(serializeProject(withPin()), 2);
+    await clearRecoveredAutosave();
+    expect(await loadRecoveredAutosave()).toBeNull();
+    expect((await loadAutosave())?.savedAt).toBe(2);
+  });
+
+  it('returns null when there is nothing to recover', async () => {
+    expect(await takeAutosaveForRecovery()).toBeNull();
   });
 });
 

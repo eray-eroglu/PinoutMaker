@@ -1,6 +1,7 @@
 import type { LegendItem, LineData, PinData } from '../types';
 import { DEFAULT_PIN_COLOR, scaleLabelsAroundAnchors } from './pinUtils';
 import { withFreshHeaderIds } from './header';
+import { normalizePin } from './project';
 
 /**
  * A ready-made pinout shipped with a library product (Supabase `products.pinout`).
@@ -64,13 +65,14 @@ export const parsePinoutTemplate = (raw: unknown): PinoutTemplate | null => {
   for (const p of pins) {
     if (!isRecord(p)) return null;
     if (![p.x, p.y, p.targetX, p.targetY].every(isFiniteNumber)) return null;
-    cleanPins.push({
+    // Function labels and header fields get the same cleaning as a project file
+    cleanPins.push(normalizePin({
       ...p,
       id: typeof p.id === 'string' ? p.id : '',
       text: typeof p.text === 'string' ? p.text : '',
       color: typeof p.color === 'string' ? p.color : DEFAULT_PIN_COLOR,
       isPwm: p.isPwm === true,
-    } as PinData);
+    } as PinData));
   }
 
   const cleanLines: LineData[] = [];

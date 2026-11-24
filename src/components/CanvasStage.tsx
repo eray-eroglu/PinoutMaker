@@ -1,5 +1,5 @@
 import { useEffect, forwardRef, useState, useRef, useCallback  } from 'react';
-import { Stage, Layer, Line, Rect, Image as KonvaImage, Circle, Group } from 'react-konva';
+import { Stage, Layer, Line, Rect, Image as KonvaImage, Circle, Group, Text } from 'react-konva';
 import Konva from 'konva';
 import { Maximize } from 'lucide-react';
 import type { PinData, LineData, LegendItem, LegendMode } from '../types';
@@ -587,7 +587,10 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
             return (
               <Group key={img.id}>
                 <KonvaImage
-                  image={img.element}
+                  // An image that could not be loaded stays as a grey placeholder (see LoadedImage)
+                  image={img.element ?? undefined}
+                  fill={img.element ? undefined : '#e5e7eb'}
+                  dash={img.element ? undefined : [8 / scale, 6 / scale]}
                   width={img.width}
                   height={img.height}
                   rotation={img.rotation}
@@ -602,14 +605,31 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
                   onDragEnd={(e) => {
                     onUpdateImage({ ...img, x: e.target.x(), y: e.target.y() }, false);
                   }}
-                  stroke={isSelected ? '#3b82f6' : undefined}
-                  strokeWidth={isSelected ? 2 / scale : 0}
+                  stroke={isSelected ? '#3b82f6' : img.element ? undefined : '#9ca3af'}
+                  strokeWidth={isSelected || !img.element ? 2 / scale : 0}
                   // Set the origin to the center of the image
                   offsetX={img.width / 2}
                   offsetY={img.height / 2}
                   x={img.x}
                   y={img.y}
                 />
+                {!img.element && (
+                  <Text
+                    text='Image could not be loaded'
+                    x={img.x}
+                    y={img.y}
+                    width={img.width}
+                    height={img.height}
+                    offsetX={img.width / 2}
+                    offsetY={img.height / 2}
+                    rotation={img.rotation}
+                    align='center'
+                    verticalAlign='middle'
+                    fontSize={Math.max(8, Math.min(img.width, img.height) / 14)}
+                    fill='#6b7280'
+                    listening={false}
+                  />
+                )}
                 {isSelected && handles.map(handle => {
                   const pos = getHandlePosition(img, handle.anchor);
                   return (

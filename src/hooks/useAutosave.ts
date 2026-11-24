@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { AUTOSAVE_DEBOUNCE_MS, createDebouncer, saveAutosave } from '../utils/autosave';
+import { AUTOSAVE_DEBOUNCE_MS, clearAutosave, createDebouncer, isProjectEmpty, saveAutosave } from '../utils/autosave';
 import { serializeProject } from '../utils/project';
 import type { ProjectState } from '../utils/project';
 
@@ -8,6 +8,9 @@ import type { ProjectState } from '../utils/project';
  * `enabled` must be false while a recovered snapshot is pending, a project is still loading
  * or the startup check has not finished, so those states can never overwrite real work.
  * Pan/zoom (scale, position) alone does not trigger a save, but is stored with the next one.
+ * An empty project is never stored: when the user empties a project that had content, the
+ * snapshot is deleted instead, so a reload does not offer the deleted work. The empty canvas at
+ * startup leaves the storage alone.
  */
 export const useAutosave = (state: ProjectState, enabled: boolean) => {
   const { images, pins, lines, gapSize, legendItems, isLegendVisible, legendMode, legendShowCounts, anchorSize, labelScale } = state;
@@ -19,12 +22,21 @@ export const useAutosave = (state: ProjectState, enabled: boolean) => {
   });
 
   const debouncerRef = useRef(createDebouncer(AUTOSAVE_DEBOUNCE_MS));
+  // Whether this session has stored (or is about to store) a non-empty snapshot
+  const hasSavedContentRef = useRef(false);
 
   useEffect(() => {
     const debouncer = debouncerRef.current;
     if (!enabled) return;
     debouncer.schedule(() => {
-      void saveAutosave(serializeProject(latestRef.current));
+      const project = serializeProject(latestRef.current);
+      if (!isProjectEmpty(project)) {
+        hasSavedContentRef.current = true;
+        void saveAutosave(project);
+      } else if (hasSavedContentRef.current) {
+        hasSavedContentRef.current = false;
+        void clearAutosave();
+      }
     });
     // Leaving the page within the debounce window would lose the last edit: write it out now.
     const flushWhenHidden = () => {

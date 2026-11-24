@@ -4,10 +4,14 @@ import { useAutosave } from './useAutosave';
 import type { ProjectState } from '../utils/project';
 import type { PinData } from '../types';
 
-const { saveAutosave } = vi.hoisted(() => ({ saveAutosave: vi.fn(async () => true) }));
+const { saveAutosave, clearAutosave } = vi.hoisted(() => ({
+  saveAutosave: vi.fn(async () => true),
+  clearAutosave: vi.fn(async () => {}),
+}));
 vi.mock('../utils/autosave', async importOriginal => ({
   ...(await importOriginal<typeof import('../utils/autosave')>()),
   saveAutosave,
+  clearAutosave,
 }));
 
 const pin = (id: string): PinData => ({ id, x: 0, y: 0, targetX: 0, targetY: 0, text: id, color: '#000', isPwm: false });
@@ -22,6 +26,7 @@ const state = (overrides: Partial<ProjectState> = {}): ProjectState => ({
 beforeEach(() => {
   vi.useFakeTimers();
   saveAutosave.mockClear();
+  clearAutosave.mockClear();
 });
 
 afterEach(() => {
@@ -87,5 +92,31 @@ describe('useAutosave', () => {
     vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
     document.dispatchEvent(new Event('visibilitychange'));
     expect(saveAutosave).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves the storage alone for the empty canvas at startup', () => {
+    const empty = state({ pins: [] });
+    const { rerender } = renderHook(({ s }) => useAutosave(s, true), { initialProps: { s: empty } });
+    rerender({ s: { ...empty, gapSize: 20 } });
+    vi.advanceTimersByTime(5000);
+    expect(saveAutosave).not.toHaveBeenCalled();
+    expect(clearAutosave).not.toHaveBeenCalled();
+  });
+
+  it('clears the snapshot when the user empties a project that had content', () => {
+    const { rerender } = renderHook(({ s }) => useAutosave(s, true), { initialProps: { s: state() } });
+    vi.advanceTimersByTime(1000);
+    expect(saveAutosave).toHaveBeenCalledTimes(1);
+
+    const emptied = state({ pins: [] });
+    rerender({ s: emptied });
+    vi.advanceTimersByTime(1000);
+    expect(clearAutosave).toHaveBeenCalledTimes(1);
+    expect(saveAutosave).toHaveBeenCalledTimes(1);
+
+    // Staying empty does not clear again
+    rerender({ s: { ...emptied, gapSize: 30 } });
+    vi.advanceTimersByTime(1000);
+    expect(clearAutosave).toHaveBeenCalledTimes(1);
   });
 });

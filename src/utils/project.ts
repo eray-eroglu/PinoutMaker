@@ -4,8 +4,16 @@ import { DEFAULT_PIN_COLOR, migrateLegacyPin } from './pinUtils';
 import { withoutHeader } from './header';
 
 export interface LoadedImage extends BoardImage {
-  element: HTMLImageElement;
+  /**
+   * Null when the image could not be loaded (unreachable URL, corrupt data). The image is kept
+   * as a placeholder so saving and autosave still write it back, instead of silently dropping
+   * it from the project; the canvas draws a grey box and export leaves it out.
+   */
+  element: HTMLImageElement | null;
 }
+
+/** Size given to a placeholder whose file has no stored size (legacy single-image projects). */
+export const MISSING_IMAGE_SIZE = { width: 400, height: 300 };
 
 export interface ProjectState {
   images: BoardImage[];
@@ -44,9 +52,13 @@ export interface ParsedProject extends Omit<ProjectState, 'images'> {
   images: Array<Omit<BoardImage, 'width' | 'height'> & { width?: number; height?: number }>;
 }
 
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+const nonEmptyString = (v: unknown): v is string => typeof v === 'string' && v !== '';
+
 /**
  * Pins from older files have no `functions` and are returned untouched. Hand-edited or
- * generated files may leave out ids or colors; fill them so the editor can rely on them.
+ * generated files (and library pinouts) may leave out ids or colors, or hold values of the
+ * wrong type; fill or drop them so rendering can rely on them.
  */
 const normalizeFunctions = (pin: PinData): PinData => {
   if (pin.functions === undefined) return pin;
@@ -57,12 +69,17 @@ const normalizeFunctions = (pin: PinData): PinData => {
   }
   return {
     ...pin,
-    functions: pin.functions.map((fn: Partial<PinFunction>) => ({
-      ...fn,
-      id: fn.id || crypto.randomUUID(),
-      text: typeof fn.text === 'string' ? fn.text : '',
-      color: fn.color || DEFAULT_PIN_COLOR,
-    })),
+    functions: (pin.functions as unknown[]).filter(isObject).map((fn): PinFunction => {
+      const rest = { ...fn };
+      delete rest.textColor;
+      return {
+        ...rest,
+        id: nonEmptyString(fn.id) ? fn.id : crypto.randomUUID(),
+        text: typeof fn.text === 'string' ? fn.text : '',
+        color: nonEmptyString(fn.color) ? fn.color : DEFAULT_PIN_COLOR,
+        ...(nonEmptyString(fn.textColor) ? { textColor: fn.textColor } : {}),
+      };
+    }),
   };
 };
 
@@ -76,6 +93,9 @@ const normalizeHeader = (pin: PinData): PinData => {
     && typeof pin.headerIndex === 'number' && Number.isInteger(pin.headerIndex) && pin.headerIndex >= 0;
   return valid ? pin : withoutHeader(pin);
 };
+
+/** Cleans the optional pin fields (function labels, header membership) of untrusted data. */
+export const normalizePin = (pin: PinData): PinData => normalizeHeader(normalizeFunctions(pin));
 
 /** Parses a saved project file, filling defaults and migrating legacy formats. Throws on invalid JSON. */
 export const parseProject = (content: string): ParsedProject => {
@@ -103,7 +123,7 @@ export const parseProject = (content: string): ParsedProject => {
     return l;
   });
 
-  const migratedPins = (isLegacy ? pins.map(p => migrateLegacyPin(p, savedScale)) : pins).map(normalizeFunctions).map(normalizeHeader);
+  const migratedPins = (isLegacy ? pins.map(p => migrateLegacyPin(p, savedScale)) : pins).map(normalizePin);
 
   return {
     images,
@@ -136,21 +156,26 @@ export const loadImageElement = (src: string): Promise<HTMLImageElement> =>
     img.src = src;
   });
 
-/** Loads every project image; images that fail are reported instead of blocking the rest. */
+/**
+ * Loads every project image, in order. An image that fails does not block the rest; it is
+ * returned as a placeholder (element null) with its stored data, and counted in `failed`.
+ */
 export const loadProjectImages = async (
   images: ParsedProject['images'],
-): Promise<{ loaded: LoadedImage[]; failed: number }> => {
-  const results = await Promise.allSettled(
-    images.map(async (bImg): Promise<LoadedImage> => {
-      const element = await loadImageElement(bImg.src);
-      return {
-        ...bImg,
-        width: bImg.width ?? element.width,
-        height: bImg.height ?? element.height,
-        element,
-      };
-    }),
-  );
-  const loaded = results.flatMap(r => (r.status === 'fulfilled' ? [r.value] : []));
-  return { loaded, failed: results.length - loaded.length };
+  load: (src: string) => Promise<HTMLImageElement> = loadImageElement,
+): Promise<{ images: LoadedImage[]; failed: number }> => {
+  const results = await Promise.allSettled(images.map(bImg => load(bImg.src)));
+  let failed = 0;
+  const loaded = images.map((bImg, i): LoadedImage => {
+    const result = results[i];
+    const element = result.status === 'fulfilled' ? result.value : null;
+    if (!element) failed++;
+    return {
+      ...bImg,
+      width: bImg.width ?? element?.width ?? MISSING_IMAGE_SIZE.width,
+      height: bImg.height ?? element?.height ?? MISSING_IMAGE_SIZE.height,
+      element,
+    };
+  });
+  return { images: loaded, failed };
 };

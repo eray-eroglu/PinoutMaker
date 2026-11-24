@@ -108,6 +108,12 @@ describe('buildExportScene', () => {
     expect(rotatedSize(100, 0, 45).width).toBeCloseTo(70.711, 3);
   });
 
+  it('leaves out images that could not be loaded (editor placeholders)', () => {
+    const missing = { id: 'm', src: 'http://127.0.0.1:9/x.png', x: 0, y: 0, width: 10, height: 10, rotation: 0, element: null };
+    expect(buildExportScene(input({ images: [missing] }), measure)).toBeNull();
+    expect(ofKind(build({ images: [missing], pins: [pin()] }), 'image')).toHaveLength(0);
+  });
+
   it('draws images first and lines after pins', () => {
     const scene = build({
       images: [{ id: 'i', src: 'data:x', x: 0, y: 0, width: 10, height: 10, rotation: 0 }],

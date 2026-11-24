@@ -17,6 +17,11 @@ export const AUTOSAVE_DEBOUNCE_MS = 1000;
 const DB_NAME = 'pinout-maker';
 const STORE_NAME = 'autosave';
 const RECORD_KEY = 'current';
+/**
+ * The snapshot found at startup, moved aside so `current` can keep mirroring the new session
+ * while the user decides whether to restore it.
+ */
+const RECOVERED_KEY = 'recovered';
 
 const openDb = (): Promise<IDBDatabase> =>
   new Promise((resolve, reject) => {
@@ -69,9 +74,9 @@ export const saveAutosave = async (project: ProjectData, now: number = Date.now(
   }
 };
 
-export const loadAutosave = async (): Promise<AutosaveRecord | null> => {
+const loadRecord = async (key: string): Promise<AutosaveRecord | null> => {
   try {
-    const value: unknown = await withStore('readonly', store => store.get(RECORD_KEY));
+    const value: unknown = await withStore('readonly', store => store.get(key));
     return isRecord(value) ? value : null;
   } catch (error) {
     console.warn('Reading autosave failed:', error);
@@ -79,11 +84,59 @@ export const loadAutosave = async (): Promise<AutosaveRecord | null> => {
   }
 };
 
-export const clearAutosave = async (): Promise<void> => {
+const deleteRecord = async (key: string): Promise<void> => {
   try {
-    await withStore('readwrite', store => store.delete(RECORD_KEY));
+    await withStore('readwrite', store => store.delete(key));
   } catch (error) {
     console.warn('Clearing autosave failed:', error);
+  }
+};
+
+/** The snapshot of the running session. */
+export const loadAutosave = () => loadRecord(RECORD_KEY);
+export const clearAutosave = () => deleteRecord(RECORD_KEY);
+
+/** The snapshot offered for restoring (see takeAutosaveForRecovery). */
+export const loadRecoveredAutosave = () => loadRecord(RECOVERED_KEY);
+export const clearRecoveredAutosave = () => deleteRecord(RECOVERED_KEY);
+
+/**
+ * Startup: moves the previous session's snapshot to the `recovered` slot (in one transaction)
+ * and returns it, so autosave can write the new session from the start without ever
+ * overwriting it. With no previous snapshot, a recovered one still waiting from an earlier
+ * start (the user reloaded without choosing) is returned instead.
+ */
+export const takeAutosaveForRecovery = async (): Promise<AutosaveRecord | null> => {
+  try {
+    const db = await openDb();
+    try {
+      return await new Promise<AutosaveRecord | null>((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        let result: AutosaveRecord | null = null;
+        const current = store.get(RECORD_KEY);
+        current.onsuccess = () => {
+          if (isRecord(current.result)) {
+            result = current.result;
+            store.put(current.result, RECOVERED_KEY);
+            store.delete(RECORD_KEY);
+            return;
+          }
+          const recovered = store.get(RECOVERED_KEY);
+          recovered.onsuccess = () => {
+            result = isRecord(recovered.result) ? recovered.result : null;
+          };
+        };
+        tx.oncomplete = () => resolve(result);
+        tx.onerror = () => reject(tx.error);
+        tx.onabort = () => reject(tx.error ?? new Error('IndexedDB transaction aborted'));
+      });
+    } finally {
+      db.close();
+    }
+  } catch (error) {
+    console.warn('Reading autosave failed:', error);
+    return null;
   }
 };
 
