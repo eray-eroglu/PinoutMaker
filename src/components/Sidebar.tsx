@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import type { PinData, LineData, LegendItem } from '../types';
-import type { LoadedImage } from '../App';
+import type { LoadedImage } from '../utils/project';
 import { isLightColor } from '../utils/colorUtils';
+import { getColorForRename, nudgeLabel } from '../utils/pinUtils';
 
 interface SidebarProps {
   selectedPin: PinData | null;
@@ -39,24 +40,6 @@ const COLORS = [
   '#1f2937', // gray-800 (default/neutral)
 ];
 
-const getSmartColor = (text: string): string | null => {
-  const upperText = text.toUpperCase().trim();
-
-  if (upperText === 'GND') return '#000000'; // GROUND
-  if (['VCC', '5V', '3V3', 'VIN', 'VDD', 'VSS'].includes(upperText)) return '#dc2626'; // POWER
-  if (['GPIO', 'PB', 'PA', 'PC'].includes(upperText) || (upperText.startsWith('P') && upperText.length <= 4 && !isNaN(Number(upperText.slice(2))))) return '#0d9488'; // PHYSICAL PIN
-  if (['SDA', 'SCL', 'I2C'].includes(upperText)) return '#0ea5e9'; // I2C
-  if (upperText.startsWith('ADC') || upperText.startsWith('AIN') || upperText.startsWith('DAC')) return '#16a34a'; // ANALOG
-  if (['RX', 'TX', 'CTS', 'RTS'].includes(upperText) || upperText.startsWith('UART') || upperText.startsWith('USART')) return '#1d4ed8'; // USART
-  if (['CS', 'SCK', 'MOSI', 'MISO', 'NSS', 'CLK'].includes(upperText) || upperText.startsWith('SPI')) return '#9333ea'; // SPI
-  if (upperText.startsWith('CAN')) return '#db2777'; // CAN BUS
-  if (upperText.startsWith('TIM') || upperText.startsWith('CH')) return '#e11d48'; // TIMER & CHANNEL
-  if (upperText.startsWith('USB') || ['D+', 'D-'].includes(upperText)) return '#65a30d'; // USB
-  if (['EN', 'BOOT', 'RST', 'RESET'].includes(upperText)) return '#ca8a04'; // CONTROL
-
-  return null;
-};
-
 export const Sidebar = ({
   selectedPin, onUpdatePin, selectedImage, onUpdateImage, 
   selectedLine, onUpdateLine,
@@ -82,12 +65,10 @@ export const Sidebar = ({
   const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (selectedPin) {
       const newText = e.target.value;
-      const smartColor = getSmartColor(newText);
-
       onUpdatePin({
         ...selectedPin,
         text: newText,
-        color: smartColor || selectedPin.color
+        color: getColorForRename(selectedPin, newText),
       }, false);
     }
   };
@@ -110,43 +91,18 @@ export const Sidebar = ({
     }
   };
 
-  // --- Position Adjustment Logic ---
-  // We take a px value from the user and apply it to the pin's x/y coordinates.
-  // When referring to "left of" or "right of", we can base it on the nearest pin or anchor point.
-  // For now, the simplest approach: manually shift the selected pin's X coordinate by px.
-
-  const handleMoveLeft = (px: number) => {
-    if (selectedPin) {
-      // Decrease X to move left.
-      // If we use labelDx/labelDy, update those too.
-      const newX = selectedPin.x - px;
-      const newDx = (newX - selectedPin.targetX) * scale;
-      onUpdatePin({ ...selectedPin, x: newX, labelDx: newDx });
-    }
+  // --- Position Adjustment ---
+  // Steps are screen pixels, matching how label offsets are stored (labelDx/labelDy).
+  const nudge = (dx: number, dy: number) => {
+    if (selectedPin) onUpdatePin(nudgeLabel(selectedPin, dx, dy, scale));
   };
+  const handleMoveLeft = (px: number) => nudge(-px, 0);
+  const handleMoveRight = (px: number) => nudge(px, 0);
+  const handleMoveUp = (px: number) => nudge(0, -px);
+  const handleMoveDown = (px: number) => nudge(0, px);
 
-  const handleMoveRight = (px: number) => {
-    if (selectedPin) {
-      const newX = selectedPin.x + px;
-      const newDx = (newX - selectedPin.targetX) * scale;
-      onUpdatePin({ ...selectedPin, x: newX, labelDx: newDx });
-    }
-  };
-
-  const handleMoveUp = (px: number) => {
-    if (selectedPin) {
-      const newY = selectedPin.y - px;
-      const newDy = (newY - selectedPin.targetY) * scale;
-      onUpdatePin({ ...selectedPin, y: newY, labelDy: newDy });
-    }
-  };
-
-  const handleMoveDown = (px: number) => {
-    if (selectedPin) {
-      const newY = selectedPin.y + px;
-      const newDy = (newY - selectedPin.targetY) * scale;
-      onUpdatePin({ ...selectedPin, y: newY, labelDy: newDy });
-    }
+  const updateLegendItem = (index: number, changes: Partial<LegendItem>) => {
+    onLegendItemsChange(legendItems.map((item, i) => (i === index ? { ...item, ...changes } : item)));
   };
 
   return (
@@ -164,7 +120,10 @@ export const Sidebar = ({
             min="0"
             max="100"
             value={gapSize}
-            onChange={(e) => onGapSizeChange(Number(e.target.value) || 12)}
+            onChange={(e) => {
+              const value = e.target.valueAsNumber;
+              if (Number.isFinite(value)) onGapSizeChange(Math.min(100, Math.max(0, value)));
+            }}
             className="w-20 border border-gray-300 rounded px-2 py-1 text-sm outline-none focus:border-blue-500"
           />
           <span className="text-xs text-gray-500">Distance between pins</span>
@@ -225,21 +184,13 @@ export const Sidebar = ({
                   <input
                     type="color"
                     value={item.color}
-                    onChange={(e) => {
-                      const newItems = [...legendItems];
-                      newItems[index].color = e.target.value;
-                      onLegendItemsChange(newItems);
-                    }}
+                    onChange={(e) => updateLegendItem(index, { color: e.target.value })}
                     className="w-6 h-6 p-0 border-0 rounded cursor-pointer shrink-0"
                   />
                   <input
                     type="text"
                     value={item.text}
-                    onChange={(e) => {
-                      const newItems = [...legendItems];
-                      newItems[index].text = e.target.value;
-                      onLegendItemsChange(newItems);
-                    }}
+                    onChange={(e) => updateLegendItem(index, { text: e.target.value })}
                     className="flex-1 min-w-0 border border-gray-300 rounded px-2 py-1 text-xs outline-none focus:border-blue-500"
                   />
                   <button
@@ -292,7 +243,7 @@ export const Sidebar = ({
                     }, false);
                   }
                 }}
-                onBlur={() => onPushHistory()}
+                onFocus={() => onPushHistory()}
               />
             </div>
             <div>
@@ -314,7 +265,7 @@ export const Sidebar = ({
                     }, false);
                   }
                 }}
-                onBlur={() => onPushHistory()}
+                onFocus={() => onPushHistory()}
               />
             </div>
             <p className="text-xs text-gray-400">
@@ -366,7 +317,7 @@ export const Sidebar = ({
               className='w-full border border-gray-300 rounded px-2 py-1.5 text-sm outline-none focus:border-blue-500'
               value={selectedLine.thickness}
               onChange={(e) => onUpdateLine({ ...selectedLine, thickness: Number(e.target.value) || 1 }, false)}
-              onBlur={() => onPushHistory()}
+              onFocus={() => onPushHistory()}
             />
           </div>
         </div>

@@ -1,9 +1,10 @@
-import React, { useRef, useLayoutEffect, useEffect } from 'react';
+import React, { useRef, useLayoutEffect, useEffect, useEffectEvent } from 'react';
 import { Label, Tag, Text, Circle, Line } from 'react-konva';
 import Konva from 'konva';
 import type { PinData } from '../types';
 import { calculateManhattanPath, calculateWavePoints } from '../utils/lineUtils';
 import { isLightColor } from '../utils/colorUtils';
+import { getLabelPosition } from '../utils/pinUtils';
 
 interface PinComponentProps {
   pin: PinData;
@@ -41,7 +42,7 @@ export const PinComponent: React.FC<PinComponentProps> = ({
   // AUTO-MIGRATION & WIDTH CALCULATION:
   // If pin lacks labelDx/labelDy, calculate them now based on current x,y and scale.
   // Also save the rendered width/height so CanvasStage can use it for right-edge alignment.
-  useEffect(() => {
+  const syncLabelMetrics = useEffectEvent(() => {
     let needsUpdate = false;
     const updates: Partial<PinData> = {};
 
@@ -64,18 +65,14 @@ export const PinComponent: React.FC<PinComponentProps> = ({
     if (needsUpdate) {
       onUpdate({ ...pin, ...updates }, false);
     }
-  }, [pin.text]); // Run on mount and when text changes
+  });
 
-  // Calculate position: Prefer visual offset (dx/dy), fallback to legacy x,y
-  const hasOffset = pin.labelDx !== undefined && pin.labelDy !== undefined;
-  
-  const currentLabelX = hasOffset 
-    ? pin.targetX + (pin.labelDx! / scale) 
-    : pin.x;
-    
-  const currentLabelY = hasOffset 
-    ? pin.targetY + (pin.labelDy! / scale) 
-    : pin.y;
+  // Run on mount and whenever the text (and therefore the label size) changes
+  useEffect(() => {
+    syncLabelMetrics();
+  }, [pin.text]);
+
+  const { x: currentLabelX, y: currentLabelY } = getLabelPosition(pin, scale);
 
   const updateLine = React.useCallback(() => {
     if (labelRef.current && anchorRef.current && lineRef.current) {
@@ -197,10 +194,6 @@ export const PinComponent: React.FC<PinComponentProps> = ({
       onSelect(pin.id, e);
     }
   };
-  
-  // Keep handleDoubleClick just in case, but removing from JSX usage or keep it as backup?
-  // Ideally manual detection in handleSelect covers it.
-  // Actually, let's remove the separate handleDoubleClick and the onDblClick props to avoid double firing.
 
 
   return (

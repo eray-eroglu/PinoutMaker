@@ -1,73 +1,83 @@
-# React + TypeScript + Vite
+# PinoutMaker
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A browser-based editor for creating pinout diagrams of electronics boards.
 
-Currently, two official plugins are available:
+Import a board photo (or pick one from the Boardoza product library), drop pins on it,
+label and color them, draw connection lines, and export the result as a PDF.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## Features
 
-## React Compiler
+- **Board images** – import from disk or the Supabase-backed product library; move, resize
+  (aspect-locked) and rotate; multiple images per project.
+- **Pins** – click to place an anchor, the label is connected with an L-shaped leader line.
+  PWM pins get a wavy line. Colors are suggested from the pin name (GND, SDA, MOSI, …) until
+  you pick one by hand.
+- **Alignment** – labels snap to each other's edges and to a configurable gap while dragging
+  (hold <kbd>Ctrl</kbd> to disable).
+- **Lines** – orthogonal polylines: click to add corners, double-click to finish, <kbd>Esc</kbd> to cancel.
+- **Legend table** – editable color legend, shown on the canvas and in the PDF.
+- **Projects** – save/load as JSON (uses the File System Access API where available, so
+  <kbd>Ctrl</kbd>+<kbd>S</kbd> overwrites the open file). Older project formats are migrated on load.
+- **PDF export** – A4, fitted to all content, with the legend.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+### Shortcuts
 
-## Expanding the ESLint configuration
+| Keys | Action |
+| --- | --- |
+| <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Y</kbd> (or <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd>) | Undo / redo |
+| <kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>Ctrl</kbd>+<kbd>V</kbd> | Copy / paste pin or line (repeated pastes are offset) |
+| <kbd>Del</kbd> / <kbd>Backspace</kbd> | Delete selection |
+| <kbd>Ctrl</kbd>+<kbd>S</kbd> | Save |
+| Mouse wheel | Zoom |
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## Development
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
+npm run dev      # start the dev server
+npm test         # run the tests (Vitest)
+npm run lint
+npm run build    # type-check and build to dist/
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+### Environment variables
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+The product library needs a Supabase project with a readable `products` table
+(`id`, `name`, `category`, `image_url`). Create `.env.local`:
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
 ```
+VITE_SUPABASE_URL=https://<project>.supabase.co
+VITE_SUPABASE_ANON_KEY=<anon key>
+```
+
+Set the same variables in the Netlify environment settings for production. Without them the
+app still works; only the library panel is disabled.
+
+The anon key is public by design, so make sure Row Level Security on `products` only allows
+`select`. Library images must be served with CORS headers (Supabase Storage does this), otherwise
+PDF export cannot read them from the canvas.
+
+## Project structure
+
+```
+src/
+  App.tsx                 state, undo/redo, shortcuts, save/load
+  components/
+    CanvasStage.tsx       Konva stage: images, pins, lines, snapping guides
+    PinComponent.tsx      a pin: anchor, label and leader line
+    LineComponent.tsx     an editable orthogonal polyline
+    Sidebar.tsx           properties of the selection, project and legend settings
+    TopBar.tsx            toolbar
+    ProductLibrary.tsx    Supabase product library panel
+  utils/
+    pinUtils.ts           label position, nudging, smart colors
+    imageResize.ts        rotation-aware resize math
+    project.ts            project (de)serialization, migration, image loading
+    exportPdf.ts          PDF export
+    lineUtils.ts          Manhattan paths and PWM waves
+```
+
+Label positions are stored as a **screen-pixel offset** from the anchor (`labelDx`/`labelDy`), so
+labels keep a constant on-screen size and distance at every zoom level. Always use
+`getLabelPosition()` to get a label's world position; the legacy `x`/`y` fields are only kept in
+sync for old project files.

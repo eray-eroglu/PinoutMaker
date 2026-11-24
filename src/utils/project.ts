@@ -1,0 +1,100 @@
+import type { BoardImage, LegendItem, LineData, PinData, ProjectData } from '../types';
+import { DEFAULT_ANCHOR_SIZE, DEFAULT_GAP_SIZE, DEFAULT_LEGEND_ITEMS } from '../constants';
+
+export interface LoadedImage extends BoardImage {
+  element: HTMLImageElement;
+}
+
+export interface ProjectState {
+  images: BoardImage[];
+  pins: PinData[];
+  lines: LineData[];
+  scale: number;
+  position: { x: number; y: number };
+  gapSize: number;
+  legendItems: LegendItem[];
+  isLegendVisible: boolean;
+  anchorSize: number;
+}
+
+/** Builds the JSON-serialisable project (drops the runtime HTMLImageElement). */
+export const serializeProject = (state: ProjectState): ProjectData => ({
+  images: state.images.map(({ id, src, x, y, width, height, rotation }) => ({ id, src, x, y, width, height, rotation })),
+  pins: state.pins,
+  lines: state.lines,
+  scale: state.scale,
+  position: state.position,
+  gapSize: state.gapSize,
+  legendItems: state.legendItems,
+  isLegendVisible: state.isLegendVisible,
+  anchorSize: state.anchorSize,
+});
+
+export interface ParsedProject extends Omit<ProjectState, 'images'> {
+  /** Images still to be loaded. Legacy single-image projects are converted to one entry. */
+  images: Array<Omit<BoardImage, 'width' | 'height'> & { width?: number; height?: number }>;
+}
+
+/** Parses a saved project file, filling defaults and migrating legacy formats. Throws on invalid JSON. */
+export const parseProject = (content: string): ParsedProject => {
+  const data = JSON.parse(content) as Partial<ProjectData>;
+  if (!data || typeof data !== 'object') throw new Error('Project file is not an object');
+
+  const images: ParsedProject['images'] = data.image
+    ? [{ id: crypto.randomUUID(), src: data.image, x: 0, y: 0, rotation: data.rotation || 0 }]
+    : (data.images ?? []);
+
+  // Legacy lines used x1/y1/x2/y2 instead of points[]
+  const lines = (data.lines ?? []).map((l): LineData => {
+    if (!l.points || l.points.length === 0) {
+      return { ...l, points: [l.x1 ?? 0, l.y1 ?? 0, l.x2 ?? 100, l.y2 ?? 100] };
+    }
+    return l;
+  });
+
+  return {
+    images,
+    pins: data.pins ?? [],
+    lines,
+    scale: data.scale || 1,
+    position: data.position ?? { x: 0, y: 0 },
+    gapSize: data.gapSize ?? DEFAULT_GAP_SIZE,
+    legendItems: data.legendItems && data.legendItems.length > 0 ? data.legendItems : DEFAULT_LEGEND_ITEMS.map(i => ({ ...i })),
+    isLegendVisible: data.isLegendVisible ?? true,
+    anchorSize: data.anchorSize ?? DEFAULT_ANCHOR_SIZE,
+  };
+};
+
+/**
+ * Loads an image element. Remote URLs are requested with CORS so the canvas
+ * is not tainted (otherwise PDF export fails with a SecurityError).
+ */
+export const loadImageElement = (src: string): Promise<HTMLImageElement> =>
+  new Promise((resolve, reject) => {
+    const img = new Image();
+    if (!src.startsWith('data:') && !src.startsWith('blob:')) {
+      img.crossOrigin = 'anonymous';
+    }
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error(`Failed to load image: ${src.slice(0, 80)}`));
+    img.src = src;
+  });
+
+/** Loads every project image; images that fail are reported instead of blocking the rest. */
+export const loadProjectImages = async (
+  images: ParsedProject['images'],
+): Promise<{ loaded: LoadedImage[]; failed: number }> => {
+  const results = await Promise.allSettled(
+    images.map(async (bImg): Promise<LoadedImage> => {
+      const element = await loadImageElement(bImg.src);
+      return {
+        ...bImg,
+        width: bImg.width ?? element.width,
+        height: bImg.height ?? element.height,
+        element,
+      };
+    }),
+  );
+  const loaded = results.flatMap(r => (r.status === 'fulfilled' ? [r.value] : []));
+  return { loaded, failed: results.length - loaded.length };
+};

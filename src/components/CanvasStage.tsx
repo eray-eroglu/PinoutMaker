@@ -2,10 +2,13 @@ import { useEffect, forwardRef, useState, useRef, useCallback  } from 'react';
 import { Stage, Layer, Line, Rect, Image as KonvaImage, Circle, Group } from 'react-konva';
 import Konva from 'konva';
 import type { PinData, LineData, LegendItem } from '../types';
-import type { LoadedImage } from '../App';
+import type { LoadedImage } from '../utils/project';
 import { PinComponent } from './PinComponent';
 import { LineComponent } from './LineComponent';
 import { calculateManhattanPath } from '../utils/lineUtils';
+import { getLabelPosition } from '../utils/pinUtils';
+import { computeResize, getHandlePosition } from '../utils/imageResize';
+import type { ResizeAnchor } from '../utils/imageResize';
 
 interface CanvasStageProps {
   images: LoadedImage[];
@@ -33,6 +36,8 @@ interface CanvasStageProps {
   legendItems: LegendItem[];
   isLegendVisible: boolean;
   anchorSize: number;
+  /** Records an undo snapshot; called before a drag starts. */
+  onPushHistory: () => void;
 }
 
 export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
@@ -60,7 +65,8 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
   gapSize,
   legendItems,
   isLegendVisible,
-  anchorSize
+  anchorSize,
+  onPushHistory,
 }, ref) => {
 
   const [dimensions, setDimensions] = useState({
@@ -218,7 +224,7 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
   };
 
   // Alignment Guides
-  const [guides, setGuides] = useState<{ vertical: number[], horizontal: number[], gaps: Array<{x: number, y: number, width: number}> }>({ vertical: [], horizontal: [], gaps: [] });
+  const [guides, setGuides] = useState<{ vertical: number[], horizontal: number[], gaps: Array<{x: number, y: number, width: number, height: number}> }>({ vertical: [], horizontal: [], gaps: [] });
 
   const handlePinDragMove = (id: string, x: number, y: number, isCtrlPressed: boolean) => {
     // If Ctrl is pressed, disable snapping completely
@@ -240,7 +246,7 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
     
     const verticalGuides: number[] = [];
     const horizontalGuides: number[] = [];
-    const gapGuides: Array<{x: number, y: number, width: number}> = [];
+    const gapGuides: Array<{x: number, y: number, width: number, height: number}> = [];
     
     let snappedX = x;
     let snappedY = y;
@@ -251,13 +257,16 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
     // Determine if the pin is on the left side of its anchor
     const isLeftSide = x < currentPin.targetX;
     
-    // Convert unscaled labelWidth to world coordinates for current pin
+    // Convert unscaled (screen-pixel) label size to world coordinates for current pin
     const currentWorldWidth = (currentPin.labelWidth || 60) / scale;
+    const currentWorldHeight = (currentPin.labelHeight || 26) / scale;
 
     // 1. Standard Alignment (Snap to common existing X or Y)
-    pins.forEach(otherPin => {
-        if (otherPin.id === id) return;
-        
+    pins.forEach(pin => {
+        if (pin.id === id) return;
+        // Use where the other label is actually drawn at the current zoom, not the stale legacy x/y
+        const otherPin = { ...pin, ...getLabelPosition(pin, scale) };
+
         const otherWorldWidth = (otherPin.labelWidth || 60) / scale;
         const otherLeftEdge = otherPin.x;
         const otherRightEdge = otherPin.x + otherWorldWidth;
@@ -276,7 +285,8 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
                 gapGuides.push({
                    x: otherRightEdge,
                    y: otherPin.y,
-                   width: FIXED_GAP
+                   width: FIXED_GAP,
+                   height: currentWorldHeight
                 });
             }
 
@@ -288,7 +298,8 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
                 gapGuides.push({
                    x: otherLeftEdge - FIXED_GAP,
                    y: otherPin.y,
-                   width: FIXED_GAP
+                   width: FIXED_GAP,
+                   height: currentWorldHeight
                 });
             }
         }
@@ -420,7 +431,7 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
         onMouseMove={handleStageMouseMove}
         ref={ref}
       >
-        <Layer className="grid-layer" listening={false}>
+        <Layer name="grid-layer" listening={false}>
           {gridLines}
         </Layer>
         <Layer name="content-layer">
@@ -428,24 +439,22 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
             const isSelected = selectedImageId === img.id;
             // Handle radius scaled inversely so it stays visually constant
             const HR = 6 / scale;
-
-            // Corner & edge handle positions relative to image top-left (before offsetX/Y)
-            // Since offsetX = w/2, offsetY = h/2, the image top-left in local space is (-w/2, -h/2)
-            const w = img.width;
-            const h = img.height;
-
-            // 8 handles: 4 corners + 4 edges
-            type HandleDef = { id: string; lx: number; ly: number; cursor: string; anchor: 'tl'|'tr'|'bl'|'br'|'t'|'b'|'l'|'r' };
-            const handles: HandleDef[] = [
-              { id: 'tl', lx: -w/2, ly: -h/2, cursor: 'nwse-resize', anchor: 'tl' },
-              { id: 'tr', lx:  w/2, ly: -h/2, cursor: 'nesw-resize', anchor: 'tr' },
-              { id: 'bl', lx: -w/2, ly:  h/2, cursor: 'nesw-resize', anchor: 'bl' },
-              { id: 'br', lx:  w/2, ly:  h/2, cursor: 'nwse-resize', anchor: 'br' },
-              { id: 't',  lx:  0,   ly: -h/2, cursor: 'ns-resize',   anchor: 't'  },
-              { id: 'b',  lx:  0,   ly:  h/2, cursor: 'ns-resize',   anchor: 'b'  },
-              { id: 'l',  lx: -w/2, ly:  0,   cursor: 'ew-resize',   anchor: 'l'  },
-              { id: 'r',  lx:  w/2, ly:  0,   cursor: 'ew-resize',   anchor: 'r'  },
+            const handles: Array<{ anchor: ResizeAnchor; cursor: string }> = [
+              { anchor: 'tl', cursor: 'nwse-resize' },
+              { anchor: 'tr', cursor: 'nesw-resize' },
+              { anchor: 'bl', cursor: 'nesw-resize' },
+              { anchor: 'br', cursor: 'nwse-resize' },
+              { anchor: 't', cursor: 'ns-resize' },
+              { anchor: 'b', cursor: 'ns-resize' },
+              { anchor: 'l', cursor: 'ew-resize' },
+              { anchor: 'r', cursor: 'ew-resize' },
             ];
+            const selectThisImage = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
+              e.cancelBubble = true;
+              onSelectImage(img.id);
+              onSelectPin(null);
+              if (onSelectLine) onSelectLine(null);
+            };
 
             return (
               <Group key={img.id}>
@@ -455,25 +464,15 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
                   height={img.height}
                   rotation={img.rotation}
                   draggable={!isAddingPin && !isAddingLine}
-                  onClick={(e) => {
-                    e.cancelBubble = true;
-                    onSelectImage(img.id);
-                    onSelectPin(null);
-                    if (onSelectLine) onSelectLine(null);
-                  }}
-                  onTap={(e) => {
-                    e.cancelBubble = true;
-                    onSelectImage(img.id);
-                    onSelectPin(null);
-                    if (onSelectLine) onSelectLine(null);
-                  }}
+                  onClick={selectThisImage}
+                  onTap={selectThisImage}
+                  // History is recorded before the drag so undo returns to the original spot
+                  onDragStart={() => onPushHistory()}
                   onDragMove={(e) => {
-                    const node = e.target;
-                    onUpdateImage({ ...img, x: node.x(), y: node.y() }, false);
+                    onUpdateImage({ ...img, x: e.target.x(), y: e.target.y() }, false);
                   }}
                   onDragEnd={(e) => {
-                    const node = e.target;
-                    onUpdateImage({ ...img, x: node.x(), y: node.y() }, true);
+                    onUpdateImage({ ...img, x: e.target.x(), y: e.target.y() }, false);
                   }}
                   stroke={isSelected ? '#3b82f6' : undefined}
                   strokeWidth={isSelected ? 2 / scale : 0}
@@ -483,125 +482,44 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
                   x={img.x}
                   y={img.y}
                 />
-                {isSelected && handles.map(handle => (
-                  <Circle
-                    key={`${img.id}-handle-${handle.id}`}
-                    // World position = image center + local offset
-                    x={img.x + handle.lx}
-                    y={img.y + handle.ly}
-                    radius={HR}
-                    fill="white"
-                    stroke="#3b82f6"
-                    strokeWidth={1.5 / scale}
-                    draggable
-                    onMouseEnter={(e) => {
-                      const stage = e.target.getStage();
-                      if (stage) stage.container().style.cursor = handle.cursor;
-                    }}
-                    onMouseLeave={(e) => {
-                      const stage = e.target.getStage();
-                      if (stage) stage.container().style.cursor = 'default';
-                    }}
-                    onDragMove={(e) => {
-                      e.cancelBubble = true;
-                      const node = e.target;
-                      const dragX = node.x();
-                      const dragY = node.y();
-                      const aspectRatio = img.width / img.height;
-
-                      // Current image center
-                      const cx = img.x;
-                      const cy = img.y;
-
-                      let newX = cx, newY = cy, newW = img.width, newH = img.height;
-
-                      if (handle.anchor === 'tl') {
-                        // Opposite corner is bottom-right: (cx + w/2, cy + h/2)
-                        const fixedX = cx + img.width / 2;
-                        const fixedY = cy + img.height / 2;
-                        const dw = fixedX - dragX;
-                        const dh = fixedY - dragY;
-                        newW = Math.max(10, Math.abs(dw) > Math.abs(dh * aspectRatio) ? dw : dh * aspectRatio);
-                        newH = newW / aspectRatio;
-                        newX = fixedX - newW / 2;
-                        newY = fixedY - newH / 2;
-                      } else if (handle.anchor === 'tr') {
-                        // Opposite corner is bottom-left: (cx - w/2, cy + h/2)
-                        const fixedX = cx - img.width / 2;
-                        const fixedY = cy + img.height / 2;
-                        const dw = dragX - fixedX;
-                        const dh = fixedY - dragY;
-                        newW = Math.max(10, Math.abs(dw) > Math.abs(dh * aspectRatio) ? dw : dh * aspectRatio);
-                        newH = newW / aspectRatio;
-                        newX = fixedX + newW / 2;
-                        newY = fixedY - newH / 2;
-                      } else if (handle.anchor === 'bl') {
-                        // Opposite corner is top-right: (cx + w/2, cy - h/2)
-                        const fixedX = cx + img.width / 2;
-                        const fixedY = cy - img.height / 2;
-                        const dw = fixedX - dragX;
-                        const dh = dragY - fixedY;
-                        newW = Math.max(10, Math.abs(dw) > Math.abs(dh * aspectRatio) ? dw : dh * aspectRatio);
-                        newH = newW / aspectRatio;
-                        newX = fixedX - newW / 2;
-                        newY = fixedY + newH / 2;
-                      } else if (handle.anchor === 'br') {
-                        // Opposite corner is top-left: (cx - w/2, cy - h/2)
-                        const fixedX = cx - img.width / 2;
-                        const fixedY = cy - img.height / 2;
-                        const dw = dragX - fixedX;
-                        const dh = dragY - fixedY;
-                        newW = Math.max(10, Math.abs(dw) > Math.abs(dh * aspectRatio) ? dw : dh * aspectRatio);
-                        newH = newW / aspectRatio;
-                        newX = fixedX + newW / 2;
-                        newY = fixedY + newH / 2;
-                      } else if (handle.anchor === 't') {
-                        const fixedY = cy + img.height / 2;
-                        newH = Math.max(10, fixedY - dragY);
-                        newW = newH * aspectRatio;
-                        newX = cx;
-                        newY = fixedY - newH / 2;
-                      } else if (handle.anchor === 'b') {
-                        const fixedY = cy - img.height / 2;
-                        newH = Math.max(10, dragY - fixedY);
-                        newW = newH * aspectRatio;
-                        newX = cx;
-                        newY = fixedY + newH / 2;
-                      } else if (handle.anchor === 'l') {
-                        const fixedX = cx + img.width / 2;
-                        newW = Math.max(10, fixedX - dragX);
-                        newH = newW / aspectRatio;
-                        newX = fixedX - newW / 2;
-                        newY = cy;
-                      } else if (handle.anchor === 'r') {
-                        const fixedX = cx - img.width / 2;
-                        newW = Math.max(10, dragX - fixedX);
-                        newH = newW / aspectRatio;
-                        newX = fixedX + newW / 2;
-                        newY = cy;
-                      }
-
-                      // Keep handle pinned to the calculated constrained bounds
-                      let newLx = 0;
-                      if (handle.anchor.includes('l')) newLx = -newW / 2;
-                      else if (handle.anchor.includes('r')) newLx = newW / 2;
-
-                      let newLy = 0;
-                      if (handle.anchor.includes('t')) newLy = -newH / 2;
-                      else if (handle.anchor.includes('b')) newLy = newH / 2;
-
-                      node.x(newX + newLx);
-                      node.y(newY + newLy);
-
-                      onUpdateImage({ ...img, x: newX, y: newY, width: newW, height: newH }, false);
-                    }}
-                    onDragEnd={(e) => {
-                      e.cancelBubble = true;
-                      // Commit final size to history
-                      onUpdateImage({ ...img }, true);
-                    }}
-                  />
-                ))}
+                {isSelected && handles.map(handle => {
+                  const pos = getHandlePosition(img, handle.anchor);
+                  return (
+                    <Circle
+                      key={`${img.id}-handle-${handle.anchor}`}
+                      x={pos.x}
+                      y={pos.y}
+                      radius={HR}
+                      fill="white"
+                      stroke="#3b82f6"
+                      strokeWidth={1.5 / scale}
+                      draggable
+                      onMouseEnter={(e) => {
+                        const stage = e.target.getStage();
+                        if (stage) stage.container().style.cursor = handle.cursor;
+                      }}
+                      onMouseLeave={(e) => {
+                        const stage = e.target.getStage();
+                        if (stage) stage.container().style.cursor = 'default';
+                      }}
+                      onDragStart={(e) => {
+                        e.cancelBubble = true;
+                        onPushHistory();
+                      }}
+                      onDragMove={(e) => {
+                        e.cancelBubble = true;
+                        const node = e.target;
+                        const { box, handle: pinned } = computeResize(img, handle.anchor, node.x(), node.y());
+                        // Keep the handle on the constrained (aspect-locked) corner/edge
+                        node.position(pinned);
+                        onUpdateImage({ ...img, ...box }, false);
+                      }}
+                      onDragEnd={(e) => {
+                        e.cancelBubble = true;
+                      }}
+                    />
+                  );
+                })}
               </Group>
             );
           })}
@@ -644,7 +562,7 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
                 x={g.x}
                 y={g.y}
                 width={g.width}
-                height={(pins.find(p => p.id === selectedPinId)?.labelHeight || 26) / scale}
+                height={g.height}
                 fill="rgba(59, 130, 246, 0.4)" // Blue gap box
                 stroke="#2563eb"
                 strokeWidth={1 / scale}

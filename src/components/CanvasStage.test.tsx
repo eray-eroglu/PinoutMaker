@@ -1,16 +1,18 @@
+import type { ComponentProps, ReactNode } from 'react';
 import { render, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { CanvasStage } from './CanvasStage';
 import type { PinData } from '../types';
+import type { PinComponent as PinComponentType } from './PinComponent';
 
 let capturedDragMove: (id: string, x: number, y: number, isCtrlPressed: boolean) => { x: number, y: number } | void;
 let capturedDragEnd: () => void;
 
 vi.mock('react-konva', () => {
   return {
-    Stage: ({ children }: any) => <div data-testid="stage">{children}</div>,
-    Layer: ({ children }: any) => <div data-testid="layer">{children}</div>,
-    Line: (props: any) => (
+    Stage: ({ children }: { children?: ReactNode }) => <div data-testid="stage">{children}</div>,
+    Layer: ({ children }: { children?: ReactNode }) => <div data-testid="layer">{children}</div>,
+    Line: (props: { stroke?: string }) => (
       <div
         data-testid="konva-line"
         data-is-guide={props.stroke === 'red'}
@@ -23,9 +25,9 @@ vi.mock('react-konva', () => {
 
 vi.mock('./PinComponent', () => {
   return {
-    PinComponent: (props: any) => {
-      capturedDragMove = props.onDragMove;
-      capturedDragEnd = props.onDragEnd;
+    PinComponent: (props: ComponentProps<typeof PinComponentType>) => {
+      capturedDragMove = props.onDragMove!;
+      capturedDragEnd = props.onDragEnd!;
       return <div data-testid={`pin-${props.pin.id}`} />;
     }
   };
@@ -57,7 +59,7 @@ describe('CanvasStage - Drag Snapping (Magnets)', () => {
     }
   ];
 
-  const defaultProps: any = {
+  const defaultProps: ComponentProps<typeof CanvasStage> = {
     images: [],
     onUpdateImage: vi.fn(),
     selectedImageId: null,
@@ -83,6 +85,7 @@ describe('CanvasStage - Drag Snapping (Magnets)', () => {
     onUpdateLine: vi.fn(),
     isAddingLine: false,
     onCreateLine: vi.fn(),
+    onPushHistory: vi.fn(),
   };
 
   beforeEach(() => {

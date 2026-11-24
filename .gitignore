@@ -31,3 +31,4 @@ release/
 .env
 .env.local
 .env.*.local
+test_out.txt*

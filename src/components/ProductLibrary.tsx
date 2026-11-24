@@ -17,20 +17,18 @@ interface ProductLibraryProps {
 
 export const ProductLibrary = ({ isOpen, onClose, onImportProduct }: ProductLibraryProps) => {
   const [products, setProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
 
-  useEffect(() => {
-    if (isOpen) {
-      fetchProducts();
-    }
-  }, [isOpen]);
+  const isConfigured = supabase !== null;
+  const loading = status === 'loading';
 
   const fetchProducts = async () => {
-    setLoading(true);
+    if (!supabase) return;
+    setStatus('loading');
     setError(null);
     try {
       const { data, error: supabaseError } = await supabase
@@ -39,17 +37,21 @@ export const ProductLibrary = ({ isOpen, onClose, onImportProduct }: ProductLibr
         .order('name');
 
       if (supabaseError) throw supabaseError;
-      setProducts(data || []);
-
+      const rows = (data ?? []) as Product[];
+      setProducts(rows);
       // Auto-expand all categories
-      const cats = new Set((data || []).map((p: Product) => p.category));
-      setExpandedCategories(cats);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load data.');
-    } finally {
-      setLoading(false);
+      setExpandedCategories(new Set(rows.map(p => p.category)));
+      setStatus('ready');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to load data.');
+      setStatus('error');
     }
   };
+
+  // Load once, the first time the panel opens; "Retry" refetches after an error.
+  useEffect(() => {
+    if (isOpen && status === 'idle') fetchProducts();
+  }, [isOpen, status]);
 
   const categories = ['All', ...Array.from(new Set(products.map(p => p.category))).sort()];
 
@@ -158,12 +160,23 @@ export const ProductLibrary = ({ isOpen, onClose, onImportProduct }: ProductLibr
             </div>
           )}
 
+          {/* Not configured */}
+          {!isConfigured && (
+            <div className="mx-3 mt-3 p-3 rounded border border-amber-200 bg-amber-50">
+              <div className="flex items-center gap-2 mb-1">
+                <AlertCircle size={14} className="text-amber-500" />
+                <span className="text-sm font-medium text-amber-700">Library unavailable</span>
+              </div>
+              <p className="text-xs text-amber-600">The product library is not configured for this site.</p>
+            </div>
+          )}
+
           {/* Error */}
           {error && (
             <div className="mx-3 mt-3 p-3 rounded border border-red-200 bg-red-50">
               <div className="flex items-center gap-2 mb-1">
                 <AlertCircle size={14} className="text-red-500" />
-                <span className="text-sm font-medium text-red-600">Connection Error</span>
+                <span className="text-sm font-medium text-red-600">Couldn't load products</span>
               </div>
               <p className="text-xs text-red-500 mb-2">{error}</p>
               <button
@@ -176,7 +189,7 @@ export const ProductLibrary = ({ isOpen, onClose, onImportProduct }: ProductLibr
           )}
 
           {/* Empty */}
-          {!loading && !error && filtered.length === 0 && (
+          {status === 'ready' && filtered.length === 0 && (
             <div className="flex flex-col items-center justify-center h-40 gap-2">
               <Package size={28} className="text-gray-300" />
               <span className="text-sm text-gray-400">No products found</span>
@@ -184,7 +197,7 @@ export const ProductLibrary = ({ isOpen, onClose, onImportProduct }: ProductLibr
           )}
 
           {/* Grouped Products */}
-          {!loading && !error && Object.entries(grouped).map(([category, items]) => (
+          {status === 'ready' && Object.entries(grouped).map(([category, items]) => (
             <div key={category}>
               {/* Category Header */}
               <button
