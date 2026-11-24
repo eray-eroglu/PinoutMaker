@@ -5,7 +5,7 @@ import { Sidebar } from './components/Sidebar';
 import { CanvasStage } from './components/CanvasStage';
 import { ProductLibrary } from './components/ProductLibrary';
 import type { Product } from './components/ProductLibrary';
-import type { PinData, LineData, LegendItem } from './types';
+import type { PinData, LineData, LegendItem, LegendMode } from './types';
 import { DEFAULT_ANCHOR_SIZE, DEFAULT_GAP_SIZE, DEFAULT_LEGEND_ITEMS } from './constants';
 import { DEFAULT_PIN_COLOR, scaleLabelsAroundAnchors } from './utils/pinUtils';
 import { loadImageElement, loadProjectImages, parseProject, serializeProject } from './utils/project';
@@ -41,6 +41,8 @@ function App() {
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
   const [legendItems, setLegendItems] = useState<LegendItem[]>(() => DEFAULT_LEGEND_ITEMS.map(i => ({ ...i })));
   const [isLegendVisible, setIsLegendVisible] = useState<boolean>(true);
+  const [legendMode, setLegendMode] = useState<LegendMode>('all');
+  const [legendShowCounts, setLegendShowCounts] = useState<boolean>(false);
 
   // Lifted state for CanvasStage
   const [scale, setScale] = useState(1);
@@ -75,7 +77,7 @@ function App() {
   }, []);
 
   useAutosave(
-    { images, pins, lines, scale, position, gapSize, legendItems, isLegendVisible, anchorSize, labelScale },
+    { images, pins, lines, scale, position, gapSize, legendItems, isLegendVisible, legendMode, legendShowCounts, anchorSize, labelScale },
     // Not while loading: pins are set before the images finish loading, and that half-loaded
     // state must not replace a good snapshot.
     autosaveChecked && !recoveredAutosave && !isLoadingProject,
@@ -343,7 +345,7 @@ function App() {
   // --- Save / load ---
   const getProjectJson = () =>
     JSON.stringify(
-      serializeProject({ images, pins, lines, scale, position, gapSize, legendItems, isLegendVisible, anchorSize, labelScale }),
+      serializeProject({ images, pins, lines, scale, position, gapSize, legendItems, isLegendVisible, legendMode, legendShowCounts, anchorSize, labelScale }),
       null,
       2,
     );
@@ -432,6 +434,8 @@ function App() {
     setGapSize(data.gapSize);
     setLegendItems(data.legendItems);
     setIsLegendVisible(data.isLegendVisible);
+    setLegendMode(data.legendMode);
+    setLegendShowCounts(data.legendShowCounts);
     setAnchorSize(data.anchorSize);
     setLabelScale(data.labelScale);
 
@@ -477,7 +481,7 @@ function App() {
     clearSelection();
     await nextFrame();
     try {
-      const exported = await exportPdf(stage, { images, pins, lines, scale, labelScale: effectiveLabelScale, legendItems, isLegendVisible });
+      const exported = await exportPdf(stage, { images, pins, lines, scale, labelScale: effectiveLabelScale, legendItems, isLegendVisible, legendMode });
       if (!exported) alert('Nothing to export!');
     } catch (e) {
       console.error('PDF Export failed', e);
@@ -578,6 +582,8 @@ function App() {
             gapSize={gapSize}
             legendItems={legendItems}
             isLegendVisible={isLegendVisible}
+            legendMode={legendMode}
+            legendShowCounts={legendShowCounts}
             anchorSize={anchorSize}
             labelScale={effectiveLabelScale}
             onPushHistory={pushHistory}
@@ -597,6 +603,10 @@ function App() {
           onLegendItemsChange={setLegendItems}
           isLegendVisible={isLegendVisible}
           onLegendVisibilityChange={setIsLegendVisible}
+          legendMode={legendMode}
+          onLegendModeChange={setLegendMode}
+          legendShowCounts={legendShowCounts}
+          onLegendShowCountsChange={setLegendShowCounts}
           anchorSize={anchorSize}
           onAnchorSizeChange={setAnchorSize}
           labelScale={effectiveLabelScale}

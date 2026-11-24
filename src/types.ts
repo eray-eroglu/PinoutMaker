@@ -33,6 +33,9 @@ export interface LineData {
   thickness: number;
 }
 
+/** Which legend rows are drawn: all, only colours in use, or all with unused ones dimmed. */
+export type LegendMode = 'all' | 'used' | 'dimUnused';
+
 export interface LegendItem {
   id: string;
   text: string;
@@ -60,6 +63,8 @@ export interface ProjectData {
   gapSize?: number;
   legendItems?: LegendItem[];
   isLegendVisible?: boolean;
+  legendMode?: LegendMode;
+  legendShowCounts?: boolean;
   anchorSize?: number;
   /**
    * World size of one label unit. Labels, anchors, leader lines and drawn lines are

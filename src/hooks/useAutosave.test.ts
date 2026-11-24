@@ -15,7 +15,7 @@ const pin = (id: string): PinData => ({ id, x: 0, y: 0, targetX: 0, targetY: 0, 
 // Stable references, like React state: a new array would count as a change.
 const stable = { images: [], pins: [pin('a')], lines: [], legendItems: [] };
 const state = (overrides: Partial<ProjectState> = {}): ProjectState => ({
-  ...stable, scale: 1, position: { x: 0, y: 0 }, gapSize: 12, isLegendVisible: true, anchorSize: 5, labelScale: 1,
+  ...stable, scale: 1, position: { x: 0, y: 0 }, gapSize: 12, isLegendVisible: true, legendMode: 'all', legendShowCounts: false, anchorSize: 5, labelScale: 1,
   ...overrides,
 });
 

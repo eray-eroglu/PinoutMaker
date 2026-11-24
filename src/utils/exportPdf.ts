@@ -1,5 +1,7 @@
 import Konva from 'konva';
-import type { LegendItem, LineData, PinData } from '../types';
+import type { LegendItem, LegendMode, LineData, PinData } from '../types';
+import { getLegendRows } from './legend';
+import type { LegendRow } from './legend';
 import type { LoadedImage } from './project';
 
 export interface ExportPdfInput {
@@ -12,6 +14,8 @@ export interface ExportPdfInput {
   labelScale: number;
   legendItems: LegendItem[];
   isLegendVisible: boolean;
+  /** Which legend rows to draw; defaults to all. */
+  legendMode?: LegendMode;
 }
 
 interface Bounds { minX: number; minY: number; maxX: number; maxY: number }
@@ -49,25 +53,32 @@ export const getContentBounds = ({ images, pins, lines, labelScale }: Omit<Expor
   return Number.isFinite(b.minX) ? b : null;
 };
 
-const buildLegendGroup = (legendItems: LegendItem[], x: number, y: number, legendScale: number) => {
+/** Legend box height for a number of rows (title + rows + pin-type key). */
+const legendHeight = (rowCount: number) => 40 + rowCount * 20 + 40;
+
+/** Dimmed (unused) rows are drawn at this opacity, matching the canvas legend. */
+const DIM_OPACITY = 0.35;
+
+const buildLegendGroup = (rows: LegendRow[], dimUnused: boolean, x: number, y: number, legendScale: number) => {
   const group = new Konva.Group({ x, y, scaleX: legendScale, scaleY: legendScale });
 
   group.add(new Konva.Rect({
-    x: 0, y: 0, width: 192, height: 40 + legendItems.length * 20 + 40,
+    x: 0, y: 0, width: 192, height: legendHeight(rows.length),
     fill: '#e6e6e6', stroke: '#d1d5db', strokeWidth: 1,
     cornerRadius: 4, shadowColor: 'black', shadowBlur: 4, shadowOpacity: 0.1,
   }));
   group.add(new Konva.Text({ x: 8, y: 8, text: 'TABLE', fontSize: 12, fontFamily: 'sans-serif', fill: '#4b5563' }));
 
   let currentY = 24;
-  legendItems.forEach(item => {
+  rows.forEach(({ item, used }) => {
+    const opacity = dimUnused && !used ? DIM_OPACITY : 1;
     group.add(new Konva.Rect({
       x: 8, y: currentY, width: 176, height: 18,
-      fill: item.color, stroke: 'rgba(0,0,0,0.5)', strokeWidth: 1,
+      fill: item.color, stroke: 'rgba(0,0,0,0.5)', strokeWidth: 1, opacity,
     }));
     group.add(new Konva.Text({
       x: 8, y: currentY + 4, width: 176, text: item.text,
-      fontSize: 10, fontFamily: 'sans-serif', fill: 'white', align: 'center',
+      fontSize: 10, fontFamily: 'sans-serif', fill: 'white', align: 'center', opacity,
     }));
     currentY += 20;
   });
@@ -110,9 +121,11 @@ export const exportPdf = async (stage: Konva.Stage, input: ExportPdfInput): Prom
   const legendScale = Math.max(1, (maxX - minX) / 1000);
   const legendX = minX - 200 * legendScale - padding;
   const legendY = minY;
+  const legendMode = input.legendMode ?? 'all';
+  const legendRows = getLegendRows(input.legendItems, input.pins, legendMode);
   if (input.isLegendVisible) {
     minX = legendX - padding;
-    maxY = Math.max(maxY, legendY + 350 * legendScale + padding);
+    maxY = Math.max(maxY, legendY + legendHeight(legendRows.length) * legendScale + padding);
   }
 
   const contentWidth = maxX - minX;
@@ -141,7 +154,7 @@ export const exportPdf = async (stage: Konva.Stage, input: ExportPdfInput): Prom
       tempNodes.push(bg);
 
       if (input.isLegendVisible) {
-        const legend = buildLegendGroup(input.legendItems, legendX, legendY, legendScale);
+        const legend = buildLegendGroup(legendRows, legendMode === 'dimUnused', legendX, legendY, legendScale);
         contentLayer.add(legend);
         tempNodes.push(legend);
       }

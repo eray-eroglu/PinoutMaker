@@ -1,4 +1,4 @@
-import type { BoardImage, LegendItem, LineData, PinData, ProjectData } from '../types';
+import type { BoardImage, LegendItem, LegendMode, LineData, PinData, ProjectData } from '../types';
 import { DEFAULT_ANCHOR_SIZE, DEFAULT_GAP_SIZE, DEFAULT_LEGEND_ITEMS } from '../constants';
 import { migrateLegacyPin } from './pinUtils';
 
@@ -15,6 +15,8 @@ export interface ProjectState {
   gapSize: number;
   legendItems: LegendItem[];
   isLegendVisible: boolean;
+  legendMode: LegendMode;
+  legendShowCounts: boolean;
   anchorSize: number;
   /** World size of one label unit; null until the first pin or line fixes it. */
   labelScale: number | null;
@@ -30,6 +32,8 @@ export const serializeProject = (state: ProjectState): ProjectData => ({
   gapSize: state.gapSize,
   legendItems: state.legendItems,
   isLegendVisible: state.isLegendVisible,
+  legendMode: state.legendMode,
+  legendShowCounts: state.legendShowCounts,
   anchorSize: state.anchorSize,
   ...(state.labelScale !== null ? { labelScale: state.labelScale } : {}),
 });
@@ -74,6 +78,8 @@ export const parseProject = (content: string): ParsedProject => {
     gapSize: data.gapSize ?? DEFAULT_GAP_SIZE,
     legendItems: data.legendItems && data.legendItems.length > 0 ? data.legendItems : DEFAULT_LEGEND_ITEMS.map(i => ({ ...i })),
     isLegendVisible: data.isLegendVisible ?? true,
+    legendMode: data.legendMode === 'used' || data.legendMode === 'dimUnused' ? data.legendMode : 'all',
+    legendShowCounts: data.legendShowCounts ?? false,
     anchorSize: data.anchorSize ?? DEFAULT_ANCHOR_SIZE,
     labelScale,
   };
