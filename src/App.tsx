@@ -36,12 +36,42 @@ import { MultiPinPanel } from './components/MultiPinPanel';
 import { isEditableElement, topOverlay } from './utils/keyboard';
 import { deepEqual } from './utils/history';
 import type { Overlay } from './utils/keyboard';
+import { defineMessages, useLanguage, useMessages } from './i18n';
 
 type HistoryState = { pins: PinData[]; lines: LineData[]; images: LoadedImage[]; labelScale: number | null };
+
+const MESSAGES = defineMessages({
+  en: {
+    imageLoadFailed: (name: string) => `Failed to load "${name}". Is it a valid image?`,
+    productImageLoadFailed: (name: string) => `Failed to load image for "${name}". Please check the image URL.`,
+    saveFailed: 'Failed to save the project.',
+    quickSaveFailed: 'Failed to save file. You may need to Save As anew.',
+    invalidProject: 'Invalid project file',
+    projectImagesFailed: (n: number) =>
+      `${n} image(s) in this project could not be loaded. They are shown as grey placeholders and stay in the project when you save.`,
+    confirmRestore: 'Replace the current canvas with the recovered work?',
+    nothingToExport: 'Nothing to export!',
+    exportFailed: (reason: string) => 'Failed to export: ' + reason,
+  },
+  tr: {
+    imageLoadFailed: (name: string) => `"${name}" yüklenemedi. Geçerli bir görsel mi?`,
+    productImageLoadFailed: (name: string) => `"${name}" için görsel yüklenemedi. Lütfen görsel adresini kontrol edin.`,
+    saveFailed: 'Proje kaydedilemedi.',
+    quickSaveFailed: 'Dosya kaydedilemedi. Farklı kaydetmeyi yeniden denemeniz gerekebilir.',
+    invalidProject: 'Geçersiz proje dosyası',
+    projectImagesFailed: (n: number) =>
+      `Bu projedeki ${n} görsel yüklenemedi. Gri yer tutucu olarak gösteriliyorlar ve kaydettiğinizde projede kalıyorlar.`,
+    confirmRestore: 'Mevcut tuval kurtarılan çalışmayla değiştirilsin mi?',
+    nothingToExport: 'Dışa aktarılacak bir şey yok!',
+    exportFailed: (reason: string) => 'Dışa aktarılamadı: ' + reason,
+  },
+});
 
 const PROJECT_FILE_TYPES = [{ description: 'JSON Files', accept: { 'application/json': ['.json'] } }];
 
 function App() {
+  const t = useMessages(MESSAGES);
+  const { language } = useLanguage();
   const [images, setImages] = useState<LoadedImage[]>([]);
   const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
   const [pins, setPins] = useState<PinData[]>([]);
@@ -196,7 +226,7 @@ function App() {
       try {
         addImage(result, await loadImageElement(result), 0, 0);
       } catch {
-        alert(`Failed to load "${file.name}". Is it a valid image?`);
+        alert(t.imageLoadFailed(file.name));
       }
     };
     reader.readAsDataURL(file);
@@ -208,7 +238,7 @@ function App() {
     try {
       element = await loadImageElement(product.image_url);
     } catch {
-      alert(`Failed to load image for "${product.name}". Please check the image URL.`);
+      alert(t.productImageLoadFailed(product.name));
       return;
     }
     // addImage records the one history step; the pinout below rides along with it, so a single
@@ -588,7 +618,7 @@ function App() {
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') return; // user cancelled the picker
       console.error('Save failed:', error);
-      alert('Failed to save the project.');
+      alert(t.saveFailed);
     }
   };
 
@@ -598,7 +628,7 @@ function App() {
       await writeToHandle(fileHandle, getProjectJson());
     } catch (error) {
       console.error('Failed to quick save:', error);
-      alert('Failed to save file. You may need to Save As anew.');
+      alert(t.quickSaveFailed);
     }
   };
 
@@ -626,7 +656,7 @@ function App() {
       data = parseProject(content);
     } catch (e) {
       console.error('Failed to parse project file', e);
-      alert('Invalid project file');
+      alert(t.invalidProject);
       return false;
     }
 
@@ -659,7 +689,7 @@ function App() {
     setImages(loaded);
     setIsLoadingProject(false);
     if (failed > 0) {
-      alert(`${failed} image(s) in this project could not be loaded. They are shown as grey placeholders and stay in the project when you save.`);
+      alert(t.projectImagesFailed(failed));
     }
     return true;
   };
@@ -682,7 +712,7 @@ function App() {
     if (!record) return;
     // Restoring resets undo, so work done since startup would be gone for good
     const hasWork = images.length > 0 || pins.length > 0 || lines.length > 0;
-    if (hasWork && !window.confirm('Replace the current canvas with the recovered work?')) return;
+    if (hasWork && !window.confirm(t.confirmRestore)) return;
     setRecoveredAutosave(null);
     // Once open, the restored project is autosaved as the current session. A snapshot that
     // no longer parses is useless, so it is dropped either way.
@@ -700,13 +730,13 @@ function App() {
       // Built from project state, so selection outlines and handles never appear in the file
       const result = await exportDiagram(
         { images, pins, lines, labelScale: effectiveLabelScale, gapSize, anchorSize, legendItems, legendMode },
-        options,
+        { ...options, language },
       );
-      if (!result.exported) alert('Nothing to export!');
+      if (!result.exported) alert(t.nothingToExport);
       else if (result.note) alert(result.note);
     } catch (e) {
       console.error('Export failed', e);
-      alert('Failed to export: ' + (e instanceof Error ? e.message : String(e)));
+      alert(t.exportFailed(e instanceof Error ? e.message : String(e)));
     }
   };
 
@@ -848,7 +878,7 @@ function App() {
   const draftPins = buildDraftPins(effectiveLabelScale, () => `header-preview-${previewId++}`);
 
   return (
-    <div className='h-screen w-screen flex flex-col overflow-hidden bg-white'>
+    <div className='h-screen w-screen flex flex-col overflow-hidden bg-white dark:bg-gray-900'>
       <TopBar
         onImport={handleImageUpload}
         onAddPin={toggleAddPinMode}

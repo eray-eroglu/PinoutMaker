@@ -113,6 +113,16 @@ describe('pinTableWarnings', () => {
       'The table has 2 rows for 3 pins; 1 pin stays unchanged.',
     ]);
   });
+
+  it('speaks Turkish, with no plural after numbers', () => {
+    expect(pinTableWarnings(pins(0, 1, 3, 4, 5), 6, false, 'tr')).toEqual(["Pad 3: pin yok (header'dan kaldırılmış); satır 3 yok sayılıyor."]);
+    expect(pinTableWarnings(pins(0, 3, 4, 6), 7, false, 'tr')).toEqual(["Pad 2–3, 6: pin yok (header'dan kaldırılmış); satır 2–3, 6 yok sayılıyor."]);
+    expect(pinTableWarnings(pins(0, 1, 2), 5, false, 'tr')).toEqual(["Tabloda 5 satır var ama header'da 3 pad var; satır 4–5 yok sayılıyor."]);
+    expect(pinTableWarnings(pins(0, 1, 3), 2, false, 'tr')).toEqual([
+      "Pad 3: pin yok (header'dan kaldırılmış).",
+      'Tabloda 3 pin için 2 satır var; 1 pin değişmeden kalıyor.',
+    ]);
+  });
 });
 
 describe('applyEntryToPin', () => {

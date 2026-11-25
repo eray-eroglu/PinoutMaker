@@ -2,6 +2,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import type { ComponentProps } from 'react';
 import { MultiPinPanel } from './MultiPinPanel';
+import { LanguageProvider } from '../i18n/LanguageProvider';
 import type { PinData } from '../types';
 
 const pin = (id: string): PinData => ({ id, x: 0, y: 0, targetX: 0, targetY: 0, text: id, color: '#000000', isPwm: false });
@@ -34,5 +35,15 @@ describe('MultiPinPanel', () => {
 
     rerender(<MultiPinPanel {...props({ moveAnchors: true, onMoveAnchorsChange })} />);
     expect(screen.getByRole('checkbox', { name: /Move anchors too/ })).toBeChecked();
+  });
+});
+
+describe('MultiPinPanel in Turkish', () => {
+  it('shows counts and actions in Turkish', () => {
+    render(<LanguageProvider initial='tr'><MultiPinPanel {...props({ combinableRows: 2 })} /></LanguageProvider>);
+    expect(screen.getByText('2 pin seçili')).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: /Bağlantı noktalarını da taşı/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Tek satırda birleştir \(2 satır\)/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /2 pini sil/ })).toBeInTheDocument();
   });
 });

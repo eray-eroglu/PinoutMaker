@@ -3,6 +3,7 @@ import { DEFAULT_PIN_COLOR, getSmartColor } from './pinUtils';
 import { LABEL_HEIGHT, labelUnitWidth } from './pinLayout';
 import type { MeasureLabel } from './pinLayout';
 import { measureLabelText } from './labelMeasure';
+import type { Language } from '../i18n';
 
 /**
  * Header tool
@@ -218,12 +219,14 @@ export const getHeaders = (pins: PinData[]): HeaderGroup[] => {
   }));
 };
 
-/** Short description of a header for pickers, e.g. "P1 – P8 (8 pins)". */
-export const describeHeader = (header: HeaderGroup): string => {
+/** Short description of a header for pickers, e.g. "P1 – P8 (8 pins)" (Turkish: "P1 – P8 (8 pin)"). */
+export const describeHeader = (header: HeaderGroup, language: Language = 'en'): string => {
   const first = header.pins[0]?.text || '?';
   const last = header.pins[header.pins.length - 1]?.text || '?';
   const n = header.pins.length;
-  return n === 1 ? `${first} (1 pin)` : `${first} – ${last} (${n} pins)`;
+  // Turkish keeps the noun singular after a number
+  const count = language === 'tr' ? `${n} pin` : `${n} pin${n === 1 ? '' : 's'}`;
+  return n === 1 ? `${first} (${count})` : `${first} – ${last} (${count})`;
 };
 
 /**

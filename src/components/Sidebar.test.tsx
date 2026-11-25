@@ -2,6 +2,7 @@ import type { ComponentProps } from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { ColorPalette, Sidebar } from './Sidebar';
+import { LanguageProvider } from '../i18n/LanguageProvider';
 import type { PinData } from '../types';
 
 const pin: PinData = {
@@ -83,5 +84,16 @@ describe('Sidebar edit sessions', () => {
     fireEvent.change(fn, { target: { value: 'ADC01' } });
     fireEvent.change(fn, { target: { value: 'ADC012' } });
     expect(historyFlags(onUpdatePin)).toEqual([true, false]);
+  });
+});
+
+describe('Sidebar in Turkish', () => {
+  it('shows the interface texts in Turkish, user data unchanged', () => {
+    render(<LanguageProvider initial='tr'><Sidebar {...sidebarProps()} /></LanguageProvider>);
+    expect(screen.getByText('Proje Ayarları')).toBeInTheDocument();
+    expect(screen.getByText('Pin Özellikleri')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '+ Fonksiyon ekle' })).toBeInTheDocument();
+    expect(screen.getByLabelText('ADC0 rengi')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('PA0')).toBeInTheDocument();
   });
 });

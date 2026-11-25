@@ -218,6 +218,8 @@ describe('getHeaders', () => {
     expect(headers[0].pins.map(p => p.id)).toEqual(['a', 'b']);
     expect(describeHeader(headers[0])).toBe('a – b (2 pins)');
     expect(describeHeader(headers[1])).toBe('c (1 pin)');
+    expect(describeHeader(headers[0], 'tr')).toBe('a – b (2 pin)');
+    expect(describeHeader(headers[1], 'tr')).toBe('c (1 pin)');
   });
 
   it('re-ids headers consistently and strips membership', () => {

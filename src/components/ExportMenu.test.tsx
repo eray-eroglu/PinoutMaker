@@ -1,6 +1,7 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { ExportMenu } from './ExportMenu';
+import { LanguageProvider } from '../i18n/LanguageProvider';
 
 describe('ExportMenu', () => {
   it('opens a dropdown and exports the picked format with the options', () => {
@@ -40,5 +41,20 @@ describe('ExportMenu', () => {
     expect(screen.getByLabelText('Include legend')).not.toBeChecked();
     fireEvent.click(screen.getByRole('menuitem', { name: /SVG/ }));
     expect(onExport).toHaveBeenCalledWith({ format: 'svg', includeLegend: false, pngScale: 2, transparent: false });
+  });
+
+  it('speaks Turkish', () => {
+    const onExport = vi.fn();
+    render(
+      <LanguageProvider initial='tr'>
+        <ExportMenu onExport={onExport} isLegendVisible={true} />
+      </LanguageProvider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Dışa aktar/ }));
+    expect(screen.getByLabelText('Lejantı dahil et')).toBeChecked();
+    fireEvent.click(screen.getByLabelText('Saydam PNG arka planı'));
+    expect(screen.getByRole('menuitem', { name: /Yüksek çözünürlüklü görsel/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('menuitem', { name: /PDF/ }));
+    expect(onExport).toHaveBeenCalledWith({ format: 'pdf', includeLegend: true, pngScale: 2, transparent: true });
   });
 });

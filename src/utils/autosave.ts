@@ -1,4 +1,5 @@
 import type { ProjectData } from '../types';
+import type { Language } from '../i18n';
 
 /**
  * Crash/refresh protection: the current project is mirrored to IndexedDB. localStorage is not an
@@ -173,12 +174,12 @@ export const createDebouncer = (delayMs: number): Debouncer => {
   return { schedule, flush, cancel };
 };
 
-/** "just now", "5 minutes ago", "2 hours ago", "3 days ago". */
-export const formatRelativeTime = (savedAt: number, now: number = Date.now()): string => {
+/** "just now", "5 minutes ago", "2 hours ago", "3 days ago" (Turkish: "az önce", "5 dakika önce", …). */
+export const formatRelativeTime = (savedAt: number, now: number = Date.now(), language: Language = 'en'): string => {
   const seconds = Math.max(0, (now - savedAt) / 1000);
-  if (seconds < 45) return 'just now';
+  if (seconds < 45) return language === 'tr' ? 'az önce' : 'just now';
   const minutes = seconds / 60;
   const [value, unit]: [number, Intl.RelativeTimeFormatUnit] =
     minutes < 60 ? [minutes, 'minute'] : minutes < 60 * 24 ? [minutes / 60, 'hour'] : [minutes / 60 / 24, 'day'];
-  return new Intl.RelativeTimeFormat('en', { numeric: 'always' }).format(-Math.max(1, Math.round(value)), unit);
+  return new Intl.RelativeTimeFormat(language, { numeric: 'always' }).format(-Math.max(1, Math.round(value)), unit);
 };

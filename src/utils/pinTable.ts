@@ -3,6 +3,7 @@ import { DEFAULT_PIN_COLOR, getSmartColor } from './pinUtils';
 import { labelUnitWidth } from './pinLayout';
 import type { MeasureLabel } from './pinLayout';
 import { measureLabelText } from './labelMeasure';
+import type { Language } from '../i18n';
 
 /**
  * Pin tables
@@ -177,17 +178,52 @@ const formatRanges = (numbers: number[]) => {
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
+/** The sentences of pinTableWarnings, per language. Numbers are 1-based and already formatted. */
+interface WarningTexts {
+  /** pads: "3" or "2–3, 6"; rows: the ignored rows in the same form, or null when none are. */
+  missingPads: (padCount: number, pads: string, rowCount: number, rows: string | null) => string;
+  extraRows: (rowCount: number, pads: number, ignored: number, ignoredRows: string) => string;
+  unchanged: (rowCount: number, pinCount: number, unchanged: number) => string;
+}
+
 /** 1-based row numbers -> "row 3 is ignored" / "rows 3–4 are ignored" */
-const rowsIgnored = (rows: number[]) =>
-  `${rows.length === 1 ? 'row' : 'rows'} ${formatRanges(rows)} ${rows.length === 1 ? 'is' : 'are'} ignored`;
+const rowsIgnored = (count: number, rows: string) =>
+  `${count === 1 ? 'row' : 'rows'} ${rows} ${count === 1 ? 'is' : 'are'} ignored`;
+
+const WARNING_TEXTS: Record<Language, WarningTexts> = {
+  en: {
+    missingPads: (padCount, pads, rowCount, rows) =>
+      `${padCount === 1 ? `Pad ${pads} has` : `Pads ${pads} have`} no pin (removed from the header)${rows ? `; ${rowsIgnored(rowCount, rows)}` : ''}.`,
+    extraRows: (rowCount, pads, ignored, ignoredRows) =>
+      `The table has ${plural(rowCount, 'row')} but the header has ${plural(pads, 'pad')}; ${rowsIgnored(ignored, ignoredRows)}.`,
+    unchanged: (rowCount, pinCount, unchanged) =>
+      `The table has ${plural(rowCount, 'row')} for ${plural(pinCount, 'pin')}; ${plural(unchanged, 'pin')} ${unchanged === 1 ? 'stays' : 'stay'} unchanged.`,
+  },
+  // Turkish has no plural after a number ("3 satır") and the number comes after the noun
+  // ("satır 3") to avoid case suffixes that depend on how the number is pronounced.
+  tr: {
+    missingPads: (_padCount, pads, _rowCount, rows) =>
+      `Pad ${pads}: pin yok (header'dan kaldırılmış)${rows ? `; satır ${rows} yok sayılıyor` : ''}.`,
+    extraRows: (rowCount, pads, _ignored, ignoredRows) =>
+      `Tabloda ${rowCount} satır var ama header'da ${pads} pad var; satır ${ignoredRows} yok sayılıyor.`,
+    unchanged: (rowCount, pinCount, unchanged) =>
+      `Tabloda ${pinCount} pin için ${rowCount} satır var; ${unchanged} pin değişmeden kalıyor.`,
+  },
+};
 
 /**
  * Explains, for the dialog, where the table and the header don't line up: pads without a pin
  * (and the rows that are ignored because of them), extra rows, and pins left unchanged.
  * Numbers shown to the user are 1-based.
  */
-export const pinTableWarnings = (headerPins: PinData[], rowCount: number, reverse: boolean): string[] => {
+export const pinTableWarnings = (
+  headerPins: PinData[],
+  rowCount: number,
+  reverse: boolean,
+  language: Language = 'en',
+): string[] => {
   if (rowCount === 0 || headerPins.length === 0) return [];
+  const texts = WARNING_TEXTS[language];
   const pads = padCount(headerPins);
   const present = new Set(headerPins.map(padIndex));
   const warnings: string[] = [];
@@ -199,16 +235,19 @@ export const pinTableWarnings = (headerPins: PinData[], rowCount: number, revers
       .map(pad => rowForPad(pad, pads, reverse))
       .filter(row => row < rowCount)
       .sort((a, b) => a - b);
-    const padText = missingPads.length === 1 ? `Pad ${missingPads[0] + 1} has` : `Pads ${formatRanges(missingPads.map(p => p + 1))} have`;
-    const rowText = skippedRows.length > 0 ? `; ${rowsIgnored(skippedRows.map(r => r + 1))}` : '';
-    warnings.push(`${padText} no pin (removed from the header)${rowText}.`);
+    warnings.push(texts.missingPads(
+      missingPads.length,
+      formatRanges(missingPads.map(p => p + 1)),
+      skippedRows.length,
+      skippedRows.length > 0 ? formatRanges(skippedRows.map(r => r + 1)) : null,
+    ));
   }
   if (rowCount > pads) {
-    warnings.push(`The table has ${plural(rowCount, 'row')} but the header has ${plural(pads, 'pad')}; ${rowsIgnored(range(pads + 1, rowCount))}.`);
+    warnings.push(texts.extraRows(rowCount, pads, rowCount - pads, formatRanges(range(pads + 1, rowCount))));
   }
   const unchanged = headerPins.filter((pin, i) => rowForPad(padIndex(pin, i), pads, reverse) >= rowCount).length;
   if (unchanged > 0) {
-    warnings.push(`The table has ${plural(rowCount, 'row')} for ${plural(headerPins.length, 'pin')}; ${plural(unchanged, 'pin')} ${unchanged === 1 ? 'stays' : 'stay'} unchanged.`);
+    warnings.push(texts.unchanged(rowCount, headerPins.length, unchanged));
   }
   return warnings;
 };

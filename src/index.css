@@ -1,5 +1,17 @@
 @import "tailwindcss";
 
+/* Dark mode follows the `dark` class on <html> (set by ThemeProvider), not only the OS setting */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Gap between a selected colour swatch and its ring: the panel's own background */
+:root {
+  --swatch-ring-gap: #ffffff;
+}
+
+.dark {
+  --swatch-ring-gap: #111827;
+}
+
 .custom-range-slider {
   -webkit-appearance: none;
   appearance: none;
@@ -53,4 +65,16 @@
 .custom-range-slider:active::-moz-range-thumb {
   background: #eff6ff;
   transform: scale(1.05);
+}
+
+.dark .custom-range-slider {
+  background: #374151;
+}
+
+.dark .custom-range-slider::-webkit-slider-thumb {
+  background: #1f2937;
+}
+
+.dark .custom-range-slider::-moz-range-thumb {
+  background: #1f2937;
 }

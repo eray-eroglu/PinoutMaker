@@ -1,7 +1,8 @@
 import type { ComponentProps, ReactNode } from 'react';
-import { render, act } from '@testing-library/react';
+import { render, act, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { CanvasStage } from './CanvasStage';
+import { LanguageProvider } from '../i18n/LanguageProvider';
 import type { PinData } from '../types';
 import type { PinComponent as PinComponentType } from './PinComponent';
 
@@ -287,6 +288,24 @@ describe('CanvasStage - Drag Snapping (Magnets)', () => {
     it('pins and lines take clicks when no tool is active', () => {
       const { container } = render(<CanvasStage {...defaultProps} />);
       expect(pinLayer(container).dataset.listening).toBe('true');
+    });
+  });
+
+  describe('placing tool hint', () => {
+    it('tells what the active tool expects next', () => {
+      const { rerender } = render(<CanvasStage {...defaultProps} />);
+      expect(screen.queryByRole('status')).toBeNull();
+
+      rerender(<CanvasStage {...defaultProps} isAddingPin />);
+      expect(screen.getByRole('status')).toHaveTextContent('Click on the board to place the pin');
+
+      rerender(<CanvasStage {...defaultProps} isAddingHeader />);
+      expect(screen.getByRole('status')).toHaveTextContent('Click the first pad of the header');
+    });
+
+    it('is shown in Turkish', () => {
+      render(<LanguageProvider initial='tr'><CanvasStage {...defaultProps} isAddingLine /></LanguageProvider>);
+      expect(screen.getByRole('status')).toHaveTextContent('Köşe eklemek için tıklayın');
     });
   });
 });

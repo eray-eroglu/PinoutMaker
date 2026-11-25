@@ -2,6 +2,7 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { TopBar } from './TopBar';
+import { LanguageProvider } from '../i18n/LanguageProvider';
 
 describe('TopBar', () => {
   const mockProps = {
@@ -73,7 +74,8 @@ describe('TopBar', () => {
     expect(screen.getByRole('button', { name: /Pin table…/ })).toBeDisabled();
 
     rerender(<TopBar {...mockProps} onAddHeader={onAddHeader} onOpenPinTable={onOpenPinTable} hasHeaders isAddingHeader />);
-    expect(screen.getByRole('button', { name: /Click first & last pad/i })).toBeInTheDocument();
+    // The label stays put while the tool is active (the instruction is a canvas hint)
+    expect(screen.getByRole('button', { name: /Add Header/i })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Pin table…/ }));
     expect(onOpenPinTable).toHaveBeenCalled();
   });
@@ -83,5 +85,25 @@ describe('TopBar', () => {
     render(<TopBar {...mockProps} onShowShortcuts={onShowShortcuts} />);
     fireEvent.click(screen.getByRole('button', { name: 'Keyboard shortcuts' }));
     expect(onShowShortcuts).toHaveBeenCalled();
+  });
+
+  it('speaks Turkish, including the language and theme buttons', () => {
+    const onShowShortcuts = vi.fn();
+    render(
+      <LanguageProvider initial='tr'>
+        <TopBar {...mockProps} onShowShortcuts={onShowShortcuts} />
+      </LanguageProvider>,
+    );
+    expect(screen.getByRole('button', { name: /Pin ekle/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Sil/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'İngilizceye geç (English)' })).toHaveTextContent('TR');
+    expect(screen.getByRole('button', { name: /^Tema: / })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Klavye kısayolları' }));
+    expect(onShowShortcuts).toHaveBeenCalled();
+
+    // The language button switches the whole toolbar back to English
+    fireEvent.click(screen.getByRole('button', { name: 'İngilizceye geç (English)' }));
+    expect(screen.getByRole('button', { name: /Add Pin/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Switch to Turkish (Türkçe)' })).toHaveTextContent('EN');
   });
 });

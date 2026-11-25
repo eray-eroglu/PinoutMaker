@@ -17,6 +17,7 @@ import { constrainToAxis, headerPinPositions } from '../utils/header';
 import type { Point } from '../utils/header';
 import { pinsInMarquee, primaryOf, rectFromPoints } from '../utils/selection';
 import { useStableCallback } from '../hooks/useStableCallback';
+import { defineMessages, useMessages } from '../i18n';
 
 interface CanvasStageProps {
   images: LoadedImage[];
@@ -74,6 +75,31 @@ interface CanvasStageProps {
   onFitToScreen?: () => void;
 }
 
+const MESSAGES = defineMessages({
+  en: {
+    imageNotLoaded: 'Image could not be loaded',
+    scale: 'Scale:',
+    fitToScreenTitle: 'Fit to screen (Shift+1)',
+    fitToScreen: 'Fit to screen',
+    hintPin: 'Click on the board to place the pin',
+    hintLine: 'Click to add corners, double-click to finish',
+    hintHeaderFirst: 'Click the first pad of the header',
+    hintHeaderLast: 'Now click the last pad (Shift keeps it straight)',
+    hintCancel: 'Esc cancels',
+  },
+  tr: {
+    imageNotLoaded: 'Görsel yüklenemedi',
+    scale: 'Ölçek:',
+    fitToScreenTitle: 'Ekrana sığdır (Shift+1)',
+    fitToScreen: 'Ekrana sığdır',
+    hintPin: 'Pini yerleştirmek için karta tıklayın',
+    hintLine: 'Köşe eklemek için tıklayın, bitirmek için çift tıklayın',
+    hintHeaderFirst: 'Header’ın ilk padine tıklayın',
+    hintHeaderLast: 'Şimdi son pade tıklayın (Shift düz tutar)',
+    hintCancel: 'Esc iptal eder',
+  },
+});
+
 const GRID_SIZE = 50;
 const GRID_LIMIT = 2000; // 4000x4000 area
 
@@ -127,6 +153,7 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
   onPushHistory,
   onFitToScreen,
 }, ref) => {
+  const t = useMessages(MESSAGES);
 
   const [dimensions, setDimensions] = useState({
     width: window.innerWidth - 320,
@@ -606,7 +633,7 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
                 />
                 {!img.element && (
                   <Text
-                    text='Image could not be loaded'
+                    text={t.imageNotLoaded}
                     x={img.x}
                     y={img.y}
                     width={img.width}
@@ -828,14 +855,26 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
           )}
         </Layer>
       </Stage>
+      {/* What the active placing tool expects next (the toolbar buttons keep their labels) */}
+      {isPlacing && (
+        <div
+          role='status'
+          className='absolute bottom-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 rounded-full bg-gray-800/90 px-3 py-1.5 text-xs text-white shadow-md pointer-events-none whitespace-nowrap'
+        >
+          <span>
+            {isAddingPin ? t.hintPin : isAddingLine ? t.hintLine : headerStart ? t.hintHeaderLast : t.hintHeaderFirst}
+          </span>
+          <span className='text-gray-300'>· {t.hintCancel}</span>
+        </div>
+      )}
       <div className='absolute bottom-2 right-2 flex items-center gap-1 text-gray-500 text-xs bg-white/80 p-1 rounded shadow'>
-        <span className='pointer-events-none'>Scale: {scale.toFixed(2)}x</span>
+        <span className='pointer-events-none'>{t.scale} {scale.toFixed(2)}x</span>
         {onFitToScreen && (
           <button
             type='button'
             onClick={onFitToScreen}
-            title='Fit to screen (Shift+1)'
-            aria-label='Fit to screen'
+            title={t.fitToScreenTitle}
+            aria-label={t.fitToScreen}
             className='p-0.5 rounded hover:bg-gray-200 text-gray-600'
           >
             <Maximize size={14} />

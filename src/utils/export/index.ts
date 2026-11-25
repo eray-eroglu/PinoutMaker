@@ -4,6 +4,7 @@ import { renderPdf } from './pdf';
 import { renderSvg } from './svg';
 import { renderToCanvas } from './canvas';
 import { pdfImageFor, svgImageHref } from './images';
+import type { Language } from '../../i18n';
 
 export type ExportFormat = 'pdf' | 'svg' | 'png';
 export type PngScale = 1 | 2 | 4;
@@ -15,6 +16,8 @@ export interface ExportOptions {
   pngScale: PngScale;
   /** PNG only: leave the background transparent instead of white. */
   transparent: boolean;
+  /** Language of the note shown to the user (the exported file itself is never translated). */
+  language?: Language;
 }
 
 export const EXPORT_FILE_NAME = 'pinout-diagram';
@@ -59,6 +62,20 @@ export const clampPngScale = (scene: Scene, requested: number) => {
   );
 };
 
+/** Tells the user a PNG was exported at a smaller scale than asked for. */
+export const pngDownscaleNote = (
+  requested: number,
+  actual: number,
+  width: number,
+  height: number,
+  language: Language = 'en',
+) => {
+  const shown = Math.floor(actual * 100) / 100;
+  return language === 'tr'
+    ? `Diyagram ×${requested} için çok büyük; ×${shown} ölçeğinde dışa aktarıldı (${width}×${height} px).`
+    : `The diagram is too large for ×${requested}; it was exported at ×${shown} (${width}×${height} px).`;
+};
+
 const exportPng = async (scene: Scene, options: ExportOptions): Promise<string | undefined> => {
   const scale = clampPngScale(scene, options.pngScale);
   const canvas = document.createElement('canvas');
@@ -71,7 +88,7 @@ const exportPng = async (scene: Scene, options: ExportOptions): Promise<string |
   if (!blob) throw new Error('Could not encode the PNG');
   download(blob, `${EXPORT_FILE_NAME}.png`);
   if (scale < options.pngScale) {
-    return `The diagram is too large for ×${options.pngScale}; it was exported at ×${Math.floor(scale * 100) / 100} (${canvas.width}×${canvas.height} px).`;
+    return pngDownscaleNote(options.pngScale, scale, canvas.width, canvas.height, options.language);
   }
 };
 

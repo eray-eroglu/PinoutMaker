@@ -221,4 +221,11 @@ describe('formatRelativeTime', () => {
   it('treats a timestamp in the future as just now', () => {
     expect(formatRelativeTime(now + 5000, now)).toBe('just now');
   });
+
+  it('speaks Turkish', () => {
+    expect(formatRelativeTime(now - 10_000, now, 'tr')).toBe('az önce');
+    expect(formatRelativeTime(now - 5 * 60_000, now, 'tr')).toBe('5 dakika önce');
+    expect(formatRelativeTime(now - 2 * 3_600_000, now, 'tr')).toBe('2 saat önce');
+    expect(formatRelativeTime(now - 3 * 86_400_000, now, 'tr')).toBe('3 gün önce');
+  });
 });
