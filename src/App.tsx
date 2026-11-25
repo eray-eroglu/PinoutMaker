@@ -70,6 +70,8 @@ function App() {
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
   const [legendMode, setLegendMode] = useState<LegendMode>('all');
   const [legendShowCounts, setLegendShowCounts] = useState<boolean>(false);
+  // Multi-select option: dragging or nudging the selected pins moves their anchors too (as Alt does)
+  const [moveAnchorsWithSelection, setMoveAnchorsWithSelection] = useState(false);
 
   // Lifted state for CanvasStage
   const [scale, setScale] = useState(1);
@@ -548,7 +550,8 @@ function App() {
     if (!hasPins && !line && !image) return; // nothing selected: let the page scroll as usual
     e.preventDefault();
     if (!e.repeat) pushHistory();
-    if (hasPins) setPins(prev => movePins(prev, selectedPinIds, dx, dy, e.altKey));
+    const withAnchor = e.altKey || (moveAnchorsWithSelection && selectedPinIds.length > 1);
+    if (hasPins) setPins(prev => movePins(prev, selectedPinIds, dx, dy, withAnchor));
     else if (line) updateLine(nudgeLine(line, dx, dy), false);
     else if (image) updateImage(nudgeImage(image, dx, dy), false);
   };
@@ -821,6 +824,8 @@ function App() {
       pins={pickPins(pins, selectedPinIds)}
       rowPitch={multiPinStats.rowPitch}
       combinableRows={multiPinStats.combinableRows}
+      moveAnchors={moveAnchorsWithSelection}
+      onMoveAnchorsChange={setMoveAnchorsWithSelection}
       onAlignEdges={() => applyToSelectedPins((p, ids) => alignLabelEdgesToAnchor(p, ids, layoutOf))}
       onAlignTops={() => applyToSelectedPins(alignLabelTops)}
       onDistribute={() => applyToSelectedPins((p, ids) => distributeVertically(p, ids, layoutOf))}
@@ -865,6 +870,7 @@ function App() {
         onOpenPinTable={() => setIsPinTableOpen(true)}
         hasHeaders={headers.length > 0}
         onExportMenuOpenChange={setIsExportMenuOpen}
+        onShowShortcuts={() => setIsHelpOpen(true)}
       />
       <ProductLibrary
         isOpen={isLibraryOpen}
@@ -912,6 +918,7 @@ function App() {
             onAddPinsToSelection={addPinsToSelection}
             onUpdatePin={updatePin}
             onMovePins={movePinGroup}
+            moveAnchorsWithSelection={moveAnchorsWithSelection}
             onDoubleClickPin={handlePinDoubleClick}
             lines={lines}
             selectedLineId={selectedLineId}

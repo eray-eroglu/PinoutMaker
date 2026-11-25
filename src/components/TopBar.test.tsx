@@ -77,4 +77,11 @@ describe('TopBar', () => {
     fireEvent.click(screen.getByRole('button', { name: /Pin table…/ }));
     expect(onOpenPinTable).toHaveBeenCalled();
   });
+
+  it('opens the keyboard shortcuts from the toolbar', () => {
+    const onShowShortcuts = vi.fn();
+    render(<TopBar {...mockProps} onShowShortcuts={onShowShortcuts} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Keyboard shortcuts' }));
+    expect(onShowShortcuts).toHaveBeenCalled();
+  });
 });

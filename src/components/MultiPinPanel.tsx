@@ -10,6 +10,9 @@ interface MultiPinPanelProps {
   rowPitch: number | null;
   /** Rows of two or more separate pins that "Combine into one row" would merge. */
   combinableRows: number;
+  /** Dragging or nudging the selection moves the anchors with the labels. */
+  moveAnchors: boolean;
+  onMoveAnchorsChange: (moveAnchors: boolean) => void;
   onAlignEdges: () => void;
   onAlignTops: () => void;
   onDistribute: () => void;
@@ -25,7 +28,7 @@ const BUTTON = 'flex items-center gap-2 w-full bg-gray-200 hover:bg-gray-300 tex
 
 /** Sidebar panel for bulk edits while several pins are selected. Every action is one undo step. */
 export const MultiPinPanel = ({
-  pins, rowPitch, combinableRows,
+  pins, rowPitch, combinableRows, moveAnchors, onMoveAnchorsChange,
   onAlignEdges, onAlignTops, onDistribute, onApplyRowPitch, onSetColor, onSetPwm, onDelete, onCombineRows,
 }: MultiPinPanelProps) => {
   // Kept as text so the field can be cleared while typing
@@ -41,9 +44,24 @@ export const MultiPinPanel = ({
       <div>
         <div className='text-sm font-semibold text-gray-700'>{pins.length} pins selected</div>
         <p className='text-[10px] text-gray-400 mt-0.5'>
-          Shift/Ctrl+click toggles a pin, Shift+drag selects an area. Dragging a selected label moves them all (Alt: with anchors).
+          Shift/Ctrl+click toggles a pin, Shift+drag selects an area. Dragging a selected label or the arrow keys move them all.
         </p>
       </div>
+
+      <label className='flex items-start gap-2 text-sm text-gray-600 cursor-pointer'>
+        <input
+          type='checkbox'
+          className='mt-0.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500'
+          checked={moveAnchors}
+          onChange={e => onMoveAnchorsChange(e.target.checked)}
+        />
+        <span>
+          Move anchors too
+          <span className='block text-[10px] text-gray-400'>
+            {moveAnchors ? 'Whole pins move together.' : 'Only the labels move; hold Alt to move the anchors as well.'}
+          </span>
+        </span>
+      </label>
 
       <div className='space-y-1.5'>
         <div className='text-xs font-semibold text-gray-500 uppercase'>Align</div>

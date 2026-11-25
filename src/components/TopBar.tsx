@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { Save, Upload, Plus, Trash2, RotateCw, FolderOpen, BookOpen, GripVertical, ClipboardPaste } from 'lucide-react';
+import { Save, Upload, Plus, Trash2, RotateCw, FolderOpen, BookOpen, GripVertical, ClipboardPaste, Keyboard } from 'lucide-react';
 import { ExportMenu } from './ExportMenu';
 import type { ExportOptions } from '../utils/export';
 
@@ -27,6 +27,8 @@ interface TopBarProps {
   onOpenPinTable?: () => void;
   hasHeaders?: boolean;
   onExportMenuOpenChange?: (isOpen: boolean) => void;
+  /** Opens the keyboard shortcuts overlay (also on the ? key). */
+  onShowShortcuts?: () => void;
 }
 
 export const TopBar = ({
@@ -50,6 +52,7 @@ export const TopBar = ({
   onOpenPinTable,
   hasHeaders = false,
   onExportMenuOpenChange,
+  onShowShortcuts,
 }: TopBarProps) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -194,7 +197,21 @@ export const TopBar = ({
           </div>
         </button>
       )}
-      <div className={`group relative flex ml-auto`}>
+      <div className='ml-auto flex items-center gap-4'>
+      {onShowShortcuts && (
+        <button
+          type='button'
+          onClick={onShowShortcuts}
+          aria-label='Keyboard shortcuts'
+          className='group relative flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-300 rounded hover:bg-gray-50 text-gray-700 text-sm cursor-pointer transition-colors'
+        >
+          <Keyboard size={16} /> Shortcuts
+          <div className="absolute top-full mt-2 right-0 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 delay-500 bg-gray-800 text-white text-xs rounded px-2 py-1 pointer-events-none z-50 whitespace-nowrap shadow-md">
+            Show all keyboard shortcuts (?)
+          </div>
+        </button>
+      )}
+      <div className='group relative flex'>
         <button
           onClick={onDeletePin}
           disabled={!isPinSelected}
@@ -208,6 +225,7 @@ export const TopBar = ({
         <div className="absolute top-full mt-2 right-0 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 delay-500 bg-gray-800 text-white text-xs rounded px-2 py-1 pointer-events-none z-50 whitespace-nowrap shadow-md">
           Delete the currently selected pin or image (Del)
         </div>
+      </div>
       </div>
     </div>
   );

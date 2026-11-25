@@ -4,7 +4,7 @@ const SHORTCUTS: Array<[string, string]> = [
   ['Shift / Ctrl + click', 'Add / remove a pin from the selection'],
   ['Shift + drag', 'Select pins in an area (on empty canvas or the board)'],
   ['Ctrl + A', 'Select all pins'],
-  ['Alt + drag label', 'Move whole pins (labels and anchors)'],
+  ['Alt + drag label', 'Move whole pins (labels and anchors); or tick "Move anchors too" in the sidebar'],
   ['Ctrl + D', 'Duplicate selected pins or line'],
   ['Ctrl + C / Ctrl + V', 'Copy / paste selected pins or line'],
   ['Del / Backspace', 'Delete selection'],

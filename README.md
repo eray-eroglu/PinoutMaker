@@ -23,7 +23,8 @@ label and color them, draw connection lines, and export the result as a PDF, SVG
   first, then its functions. Names and functions get smart colours; *Reverse order* fills the
   header from its last pin.
 - **Multi-select** – select several pins (<kbd>Shift</kbd>/<kbd>Ctrl</kbd>+click, <kbd>Shift</kbd>+drag,
-  <kbd>Ctrl</kbd>+<kbd>A</kbd>) to move, nudge, copy, duplicate or delete them together. The sidebar then
+  <kbd>Ctrl</kbd>+<kbd>A</kbd>) to move, nudge, copy, duplicate or delete them together; *Move anchors too* makes
+  dragging and arrow keys move the anchors with the labels. The sidebar then
   aligns label edges to the anchors, aligns tops, distributes rows or sets their spacing, sets the colour
   or PWM of all, and can **combine into one row**: in older projects where every function was a separate
   pin, the labels of each row become one pin with function labels.
@@ -42,7 +43,7 @@ label and color them, draw connection lines, and export the result as a PDF, SVG
 | <kbd>Shift</kbd>+click / <kbd>Ctrl</kbd>+click | Add a pin to / remove it from the selection |
 | <kbd>Shift</kbd>+drag on empty canvas or the board | Selection rectangle: adds pins whose anchor or label row it touches |
 | <kbd>Ctrl</kbd>+<kbd>A</kbd> | Select all pins |
-| Drag a selected label | Moves the labels of all selected pins (<kbd>Alt</kbd>+drag: whole pins, anchors too) |
+| Drag a selected label | Moves the labels of all selected pins (<kbd>Alt</kbd>+drag, or *Move anchors too* in the sidebar: whole pins, anchors too) |
 | <kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>Ctrl</kbd>+<kbd>V</kbd> | Copy / paste selected pins (keeping their layout) or line (repeated pastes are offset) |
 | <kbd>Del</kbd> / <kbd>Backspace</kbd> | Delete selection |
 | <kbd>Ctrl</kbd>+<kbd>S</kbd> | Save |
@@ -55,7 +56,7 @@ label and color them, draw connection lines, and export the result as a PDF, SVG
 | <kbd>Shift</kbd> (Add Header) | Keep the header exactly horizontal / vertical while picking the last pad |
 | <kbd>Ctrl</kbd>+<kbd>Enter</kbd> | Apply the pin table (in the pin table dialog) |
 | <kbd>Esc</kbd> | Close the top-most open panel or dialog; otherwise clear selection, cancel line drawing / add-pin / add-header mode |
-| <kbd>?</kbd> | Show / hide the shortcuts overlay |
+| <kbd>?</kbd> | Show / hide the shortcuts overlay (also the *Shortcuts* button in the toolbar) |
 | Mouse wheel | Zoom |
 
 While a dialog or panel (library, export menu, pin table, header settings, shortcuts overlay) is open, the canvas shortcuts are off.

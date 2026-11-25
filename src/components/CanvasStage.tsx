@@ -38,6 +38,8 @@ interface CanvasStageProps {
   onUpdatePin: (pin: PinData, saveHistory?: boolean) => void;
   /** Moves several pins' labels (and anchors with withAnchor) by one offset, as one undo step. */
   onMovePins: (ids: string[], dx: number, dy: number, withAnchor: boolean) => void;
+  /** With several pins selected, dragging one of them moves the anchors too (as Alt+drag does). */
+  moveAnchorsWithSelection?: boolean;
   onDoubleClickPin: (id: string, functionIndex: number) => void;
   lines: LineData[];
   selectedLineId: string | null;
@@ -97,6 +99,7 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
   onAddPinsToSelection,
   onUpdatePin,
   onMovePins,
+  moveAnchorsWithSelection = false,
   onDoubleClickPin,
   lines,
   selectedLineId,
@@ -672,6 +675,7 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
               // The picked label only matters for the single-pin editor
               selectedFunctionIndex={selectedPinIds.length === 1 && pin.id === primaryPinId ? selectedFunctionIndex : null}
               followOffset={groupDrag && groupDrag.id !== pin.id && selectedPinSet.has(pin.id) ? groupDrag : null}
+              anchorFollowsLabel={moveAnchorsWithSelection && selectedPinIds.length > 1 && selectedPinSet.has(pin.id)}
               {...pinHandlers}
               anchorSize={anchorSize}
             />

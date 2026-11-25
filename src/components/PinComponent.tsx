@@ -43,6 +43,8 @@ interface PinComponentProps {
   followOffset?: { dx: number; dy: number; withAnchor: boolean } | null;
   onDoubleClick: (id: string, functionIndex: number) => void;
   anchorSize: number;
+  /** Dragging the label moves the anchor too, without Alt (multi-select option). */
+  anchorFollowsLabel?: boolean;
 }
 
 type Point = { x: number; y: number };
@@ -82,6 +84,7 @@ export const PinComponent = memo(function PinComponent({
   followOffset,
   onDoubleClick,
   anchorSize,
+  anchorFollowsLabel = false,
 }: PinComponentProps) {
   const lastClickRef = useRef({ time: 0, functionIndex: -1 });
 
@@ -90,7 +93,7 @@ export const PinComponent = memo(function PinComponent({
   // label crosses its anchor.
   const [draggedLabel, setLabelDrag] = useDragOverride({ x: pin.x, y: pin.y });
   const [draggedAnchor, setAnchorDrag] = useDragOverride({ x: pin.targetX, y: pin.targetY });
-  // Alt held during the current label drag: the anchor travels with the label
+  // Alt held (or anchorFollowsLabel) during the current label drag: the anchor travels with the label
   const [dragWithAnchor, setDragWithAnchor] = useState(false);
 
   let label = draggedLabel;
@@ -123,7 +126,7 @@ export const PinComponent = memo(function PinComponent({
   const handleRowDragMove = (e: Konva.KonvaEventObject<DragEvent>) => {
     const node = e.target;
     let pos = { x: node.x(), y: node.y() };
-    const withAnchor = e.evt.altKey;
+    const withAnchor = e.evt.altKey || anchorFollowsLabel;
     setDragWithAnchor(withAnchor);
     if (onDragMove) {
       const snapped = onDragMove(pin.id, pos.x, pos.y, e.evt.ctrlKey || e.evt.metaKey, withAnchor);
