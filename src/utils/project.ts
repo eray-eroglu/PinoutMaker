@@ -94,8 +94,19 @@ const normalizeHeader = (pin: PinData): PinData => {
   return valid ? pin : withoutHeader(pin);
 };
 
+/** Measured label size written by older versions; geometry now comes from layoutPinLabels. */
+const withoutLegacyLabelSize = (pin: PinData): PinData => {
+  const rest = { ...pin } as PinData & { labelWidth?: unknown; labelHeight?: unknown };
+  delete rest.labelWidth;
+  delete rest.labelHeight;
+  return rest;
+};
+
 /** Cleans the optional pin fields (function labels, header membership) of untrusted data. */
-export const normalizePin = (pin: PinData): PinData => normalizeHeader(normalizeFunctions(pin));
+export const normalizePin = (pin: PinData): PinData => normalizeHeader(normalizeFunctions(withoutLegacyLabelSize(pin)));
+
+/** A line as older files stored it: one segment as x1/y1/x2/y2, sometimes with an isAngled flag. */
+type LegacyLine = LineData & { x1?: number; y1?: number; x2?: number; y2?: number; isAngled?: boolean };
 
 /** Parses a saved project file, filling defaults and migrating legacy formats. Throws on invalid JSON. */
 export const parseProject = (content: string): ParsedProject => {
@@ -116,11 +127,15 @@ export const parseProject = (content: string): ParsedProject => {
   const labelScale = data.labelScale ?? (hasContent ? 1 / savedScale : null);
 
   // Legacy lines used x1/y1/x2/y2 instead of points[]
-  const lines = (data.lines ?? []).map((l): LineData => {
-    if (!l.points || l.points.length === 0) {
-      return { ...l, points: [l.x1 ?? 0, l.y1 ?? 0, l.x2 ?? 100, l.y2 ?? 100] };
-    }
-    return l;
+  const lines = ((data.lines ?? []) as LegacyLine[]).map((legacy): LineData => {
+    const line = { ...legacy };
+    delete line.x1;
+    delete line.y1;
+    delete line.x2;
+    delete line.y2;
+    delete line.isAngled;
+    if (line.points && line.points.length > 0) return line;
+    return { ...line, points: [legacy.x1 ?? 0, legacy.y1 ?? 0, legacy.x2 ?? 100, legacy.y2 ?? 100] };
   });
 
   const migratedPins = (isLegacy ? pins.map(p => migrateLegacyPin(p, savedScale)) : pins).map(normalizePin);

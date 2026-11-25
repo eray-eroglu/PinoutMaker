@@ -54,7 +54,6 @@ describe('CanvasStage - Drag Snapping (Magnets)', () => {
       y: 100,
       targetX: 150,
       targetY: 100,
-      labelWidth: 60,
     },
     {
       id: 'pin-2',
@@ -65,7 +64,6 @@ describe('CanvasStage - Drag Snapping (Magnets)', () => {
       y: 200,
       targetX: 150,
       targetY: 200,
-      labelWidth: 60,
     }
   ];
 

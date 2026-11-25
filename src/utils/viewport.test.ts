@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { fitToContent, getContentBounds, zoomAroundCentre, centreOn } from './viewport';
-import { nudgeImage, nudgeLine, nudgePin } from './nudge';
+import { nudgeImage, nudgeLine } from './nudge';
 import { duplicateLine, duplicatePin } from './duplicate';
 import type { LineData, PinData } from '../types';
 import type { LoadedImage } from './project';
@@ -59,12 +59,6 @@ const pin: PinData = { id: 'a', x: 10, y: 20, targetX: 5, targetY: 6, text: 'P',
 const line: LineData = { id: 'l', points: [0, 0, 10, 0, 10, 10], color: '#000', thickness: 2 };
 
 describe('nudge', () => {
-  it('moves only the label by default', () => {
-    expect(nudgePin(pin, 1, -1)).toMatchObject({ x: 11, y: 19, targetX: 5, targetY: 6 });
-  });
-  it('moves the whole pin with the anchor', () => {
-    expect(nudgePin(pin, 10, 0, true)).toMatchObject({ x: 20, targetX: 15, targetY: 6 });
-  });
   it('moves all line points', () => {
     expect(nudgeLine(line, 2, 3).points).toEqual([2, 3, 12, 3, 12, 13]);
   });

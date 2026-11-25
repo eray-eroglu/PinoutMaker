@@ -20,9 +20,18 @@ describe('parseProject', () => {
   it('migrates legacy x1/y1/x2/y2 lines to points[]', () => {
     const p = parseProject(JSON.stringify({
       pins: [], scale: 1, position: { x: 0, y: 0 },
-      lines: [{ id: 'l', x1: 1, y1: 2, x2: 3, y2: 4, color: '#000', thickness: 2 }],
+      lines: [{ id: 'l', x1: 1, y1: 2, x2: 3, y2: 4, isAngled: true, color: '#000', thickness: 2 }],
     }));
-    expect(p.lines[0].points).toEqual([1, 2, 3, 4]);
+    // The old fields are dropped, so they are not written back on the next save
+    expect(p.lines[0]).toEqual({ id: 'l', points: [1, 2, 3, 4], color: '#000', thickness: 2 });
+  });
+
+  it('drops the measured label size older versions stored on pins', () => {
+    const pin = { id: 'p', x: 1, y: 2, targetX: 0, targetY: 0, text: 'A', color: '#000', isPwm: false };
+    const p = parseProject(JSON.stringify({
+      pins: [{ ...pin, labelWidth: 60, labelHeight: 24 }], scale: 1, position: { x: 0, y: 0 }, labelScale: 1,
+    }));
+    expect(p.pins[0]).toEqual(pin);
   });
 
   it('converts the legacy single image into an images[] entry', () => {

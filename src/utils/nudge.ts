@@ -1,13 +1,5 @@
-import type { LineData, PinData } from '../types';
+import type { LineData } from '../types';
 import type { LoadedImage } from './project';
-
-/** Pin label moves; the anchor only moves with `withAnchor` (whole pin). */
-export const nudgePin = (pin: PinData, dx: number, dy: number, withAnchor = false): PinData => ({
-  ...pin,
-  x: pin.x + dx,
-  y: pin.y + dy,
-  ...(withAnchor ? { targetX: pin.targetX + dx, targetY: pin.targetY + dy } : {}),
-});
 
 export const nudgeLine = (line: LineData, dx: number, dy: number): LineData => ({
   ...line,

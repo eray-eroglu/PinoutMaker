@@ -385,9 +385,7 @@ export const CanvasStage = forwardRef<Konva.Stage, CanvasStageProps>(({
 
     // Find nearby alignments
     const THRESHOLD = 10 / scale; // Snap within 10 screen pixels
-    
-    // Actually, fixed world units is much better for printing consistency across zooms.
-    const FIXED_GAP = gapSize; // Use the configured gap size
+    const FIXED_GAP = gapSize; // World units, so the gap is the same at every zoom
     
     const verticalGuides: number[] = [];
     const horizontalGuides: number[] = [];

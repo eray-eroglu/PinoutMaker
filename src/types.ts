@@ -18,13 +18,6 @@ export interface PinData {
   labelDx?: number;
   /** @deprecated See labelDx. */
   labelDy?: number;
-  /**
-   * @deprecated Measured label size written by older versions. Label geometry now comes from
-   * layoutPinLabels (utils/pinLayout.ts); the fields are ignored and only kept so old files type-check.
-   */
-  labelWidth?: number;
-  /** @deprecated See labelWidth. */
-  labelHeight?: number;
   /** Primary label, joined to the anchor by the leader line. */
   text: string;
   color: string;
@@ -48,12 +41,6 @@ export interface LineData {
   id: string;
   /** Multi-point polyline [x0,y0, x1,y1, ...]. All segments are orthogonal (Manhattan). */
   points: number[];
-  /** Legacy fields kept for backward compatibility when loading old projects */
-  x1?: number;
-  y1?: number;
-  x2?: number;
-  y2?: number;
-  isAngled?: boolean;
   color: string;
   thickness: number;
 }
