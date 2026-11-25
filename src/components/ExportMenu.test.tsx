@@ -57,4 +57,71 @@ describe('ExportMenu', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: /PDF/ }));
     expect(onExport).toHaveBeenCalledWith({ format: 'pdf', includeLegend: true, pngScale: 2, transparent: true });
   });
+  it('keeps its name when only the icon shows, and floats the menu under the button', () => {
+    render(<ExportMenu onExport={vi.fn()} isLegendVisible={true} labelClassName='hidden lg:inline' />);
+    const button = screen.getByRole('button', { name: 'Export' });
+    expect(button.querySelector('.hidden')).toHaveTextContent('Export');
+
+    button.getBoundingClientRect = () => ({ left: 300, right: 360, top: 10, bottom: 44, width: 60, height: 34, x: 300, y: 10, toJSON: () => ({}) });
+    fireEvent.click(button);
+    // Fixed, so a scrolling toolbar can't clip it
+    const menu = screen.getByRole('menu');
+    expect(menu).toHaveClass('fixed');
+    expect(menu.style.top).toBe('48px');
+    expect(menu.style.left).toBe('8px'); // jsdom's window is 0px wide, so the menu is kept at the margin
+
+    // Scrolling would leave it behind its button, so it closes
+    fireEvent.scroll(window);
+    expect(screen.queryByRole('menu')).toBeNull();
+  });
+
+  describe('pin list entry', () => {
+    it('is hidden without onExportPinList', () => {
+      render(<ExportMenu onExport={vi.fn()} isLegendVisible={true} />);
+      fireEvent.click(screen.getByRole('button', { name: /Export/ }));
+      expect(screen.queryByRole('menuitem', { name: /Pin list/ })).toBeNull();
+    });
+
+    it('calls onExportPinList and closes the menu', () => {
+      const onExport = vi.fn();
+      const onExportPinList = vi.fn();
+      const onOpenChange = vi.fn();
+      render(<ExportMenu onExport={onExport} isLegendVisible={true} onExportPinList={onExportPinList} hasPins={true} onOpenChange={onOpenChange} />);
+      fireEvent.click(screen.getByRole('button', { name: /Export/ }));
+      const item = screen.getByRole('menuitem', { name: /Pin list \(CSV\)/ });
+      expect(item).toHaveTextContent('All pins and functions, for Excel');
+      expect(item).toBeEnabled();
+      fireEvent.click(item);
+      expect(onExportPinList).toHaveBeenCalledTimes(1);
+      expect(onExport).not.toHaveBeenCalled();
+      expect(screen.queryByRole('menu')).toBeNull();
+      expect(onOpenChange).toHaveBeenLastCalledWith(false);
+    });
+
+    it('is disabled with a tooltip when there are no pins', () => {
+      const onExportPinList = vi.fn();
+      render(<ExportMenu onExport={vi.fn()} isLegendVisible={true} onExportPinList={onExportPinList} hasPins={false} />);
+      fireEvent.click(screen.getByRole('button', { name: /Export/ }));
+      const item = screen.getByRole('menuitem', { name: /Pin list/ });
+      expect(item).toBeDisabled();
+      expect(item).toHaveAttribute('title', 'Add pins first: the project has none to list');
+      fireEvent.click(item);
+      expect(onExportPinList).not.toHaveBeenCalled();
+      expect(screen.getByRole('menu')).toBeInTheDocument();
+    });
+
+    it('speaks Turkish', () => {
+      const onExportPinList = vi.fn();
+      render(
+        <LanguageProvider initial='tr'>
+          <ExportMenu onExport={vi.fn()} isLegendVisible={true} onExportPinList={onExportPinList} />
+        </LanguageProvider>,
+      );
+      fireEvent.click(screen.getByRole('button', { name: /Dışa aktar/ }));
+      const item = screen.getByRole('menuitem', { name: /Pin listesi \(CSV\)/ });
+      expect(item).toHaveTextContent('Tüm pinler ve fonksiyonlar, Excel için');
+      fireEvent.click(item);
+      expect(onExportPinList).toHaveBeenCalledTimes(1);
+    });
+  });
 });

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { ProductLibrary } from './ProductLibrary';
+import { getSupabase } from '../supabaseClient';
 import { LanguageProvider } from '../i18n/LanguageProvider';
 
 const validPinout = {
@@ -22,7 +23,12 @@ vi.mock('../supabaseClient', () => {
     retry: () => builder,
     abortSignal: () => Promise.resolve({ data: rows, error: null }),
   };
-  return { supabase: { from: () => builder } };
+  const client = { from: () => builder };
+  return {
+    isSupabaseConfigured: true,
+    // The client is loaded lazily; the component must await it before querying
+    getSupabase: vi.fn(() => Promise.resolve(client)),
+  };
 });
 
 describe('ProductLibrary pinout offers', () => {
@@ -73,5 +79,16 @@ describe('ProductLibrary in Turkish', () => {
     expect(screen.getByText('Görsel + pinout')).toBeTruthy();
     // Category from the database, untranslated (filter chip, group header and three cards)
     expect(screen.getAllByText('MCU').length).toBeGreaterThan(1);
+  });
+});
+
+describe('ProductLibrary loading the client', () => {
+  it('shows the error with Retry when the Supabase chunk fails to load, and recovers on retry', async () => {
+    vi.mocked(getSupabase).mockRejectedValueOnce(new Error('Failed to fetch dynamically imported module'));
+    render(<ProductLibrary isOpen onClose={() => {}} onImportProduct={() => {}} />);
+    expect(await screen.findByText("Couldn't load products")).toBeTruthy();
+    expect(screen.getByText('Failed to fetch dynamically imported module')).toBeTruthy();
+    fireEvent.click(screen.getByText('Retry'));
+    expect(await screen.findByText('Blue Pill')).toBeTruthy();
   });
 });

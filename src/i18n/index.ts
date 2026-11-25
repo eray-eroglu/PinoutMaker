@@ -8,8 +8,10 @@ import { createContext, useContext } from 'react';
  * (and, for texts with values, the same function signatures) of the `en` half, so a missing
  * translation is a type error.
  *
- * Only the editor's interface is translated. The diagram itself (legend rows, exported files)
- * is the user's content and is never changed by the language setting.
+ * Only the editor's interface is translated. The diagram itself (legend rows, PDF/SVG/PNG
+ * exports) is the user's content and is never changed by the language setting. The pin list CSV
+ * is the exception: its column titles (and delimiter, for Excel) follow the interface language;
+ * the pin names in it are still the user's own.
  */
 
 export type Language = 'en' | 'tr';

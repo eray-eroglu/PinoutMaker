@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { X, Search, Package, ChevronDown, ImagePlus, Loader2, AlertCircle, BookOpen } from 'lucide-react';
-import { supabase } from '../supabaseClient';
+import { getSupabase, isSupabaseConfigured } from '../supabaseClient';
 import { parsePinoutTemplate } from '../utils/pinoutTemplate';
 import { defineMessages, useMessages } from '../i18n';
 
@@ -69,14 +69,20 @@ export const ProductLibrary = ({ isOpen, onClose, onImportProduct }: ProductLibr
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null); // null = all categories
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
 
-  const isConfigured = supabase !== null;
+  const isConfigured = isSupabaseConfigured;
   const loading = status === 'loading';
 
   const fetchProducts = async () => {
-    if (!supabase) return;
+    if (!isSupabaseConfigured) {
+      void getSupabase(); // logs the setup hint once
+      return;
+    }
     setStatus('loading');
     setError(null);
     try {
+      // supabase-js is loaded on first use; a failed chunk load lands in the error state below
+      const supabase = await getSupabase();
+      if (!supabase) return;
       const { data, error: supabaseError } = await supabase
         .from('products')
         .select('*')

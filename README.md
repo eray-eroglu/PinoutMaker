@@ -8,7 +8,8 @@ label and color them, draw connection lines, and export the result as a PDF, SVG
 ## Features
 
 - **Board images** – import from disk or the Supabase-backed product library; move, resize
-  (aspect-locked) and rotate; multiple images per project.
+  (aspect-locked) and rotate; multiple images per project. Photos larger than 3000 px on the long
+  side are scaled down on import (transparent images stay PNG), keeping project files and autosave small.
 - **Pins** – click to place an anchor, the label is connected with an L-shaped leader line.
   PWM pins get a wavy line. Colors are suggested from the pin name (GND, SDA, MOSI, …) until
   you pick one by hand.
@@ -29,11 +30,18 @@ label and color them, draw connection lines, and export the result as a PDF, SVG
   or PWM of all, and can **combine into one row**: in older projects where every function was a separate
   pin, the labels of each row become one pin with function labels.
 - **Lines** – orthogonal polylines: click to add corners, double-click to finish, <kbd>Esc</kbd> to cancel.
-- **Legend table** – editable color legend, shown on the canvas and in exports.
+- **Legend table** – editable color legend, shown on the canvas and in exports. Row edits and the
+  table settings (show, rows to show, counts) are undoable like any other change.
 - **Projects** – save/load as JSON (uses the File System Access API where available, so
   <kbd>Ctrl</kbd>+<kbd>S</kbd> overwrites the open file). Older project formats are migrated on load.
 - **Export** – vector PDF (A4, selectable text), standalone SVG for web pages, or high-resolution
   PNG (×1/×2/×4, optional transparent background); the legend can be included or left out.
+- **Pin list** – *Export → Pin list (CSV)* downloads every pin (header, pad, name, PWM, functions) for
+  Excel / Google Sheets; Turkish uses `;` as the delimiter, as Turkish Excel expects.
+- **Interface** – English or Turkish (*EN/TR* in the toolbar, defaults to the browser language) and a
+  light, dark or system theme. The canvas stays light in every theme, so pin colours keep their
+  contrast and it matches the exported file. An empty project shows a welcome card (import an image,
+  pick from the library or open a project; images can also be dropped on it).
 
 ### Shortcuts
 

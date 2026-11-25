@@ -87,6 +87,79 @@ describe('Sidebar edit sessions', () => {
   });
 });
 
+describe('Sidebar legend editor undo', () => {
+  const rows = [
+    { id: 'a', text: 'GPIO', color: '#16a34a' },
+    { id: 'b', text: 'POWER', color: '#dc2626' },
+  ];
+  const openTable = (over: Partial<ComponentProps<typeof Sidebar>>) => {
+    const utils = render(<Sidebar {...sidebarProps({ legendItems: rows, ...over })} />);
+    fireEvent.click(screen.getByText('Table Settings'));
+    return utils;
+  };
+
+  it('adding and removing a row are one undo step each', () => {
+    const onLegendItemsChange = vi.fn();
+    openTable({ onLegendItemsChange });
+    fireEvent.click(screen.getByText('+ Add Row'));
+    expect(onLegendItemsChange.mock.calls[0][0]).toHaveLength(3);
+    fireEvent.click(screen.getAllByTitle('Remove row')[0]);
+    expect(onLegendItemsChange.mock.calls[1][0]).toEqual([rows[1]]);
+    expect(historyFlags(onLegendItemsChange)).toEqual([true, true]);
+  });
+
+  it('typing a row name records one step per focus session; an untouched field records nothing', () => {
+    const onLegendItemsChange = vi.fn();
+    openTable({ onLegendItemsChange });
+    const text = screen.getByDisplayValue('GPIO');
+    fireEvent.focus(text);
+    fireEvent.blur(text);
+    expect(onLegendItemsChange).not.toHaveBeenCalled();
+
+    fireEvent.focus(text);
+    fireEvent.change(text, { target: { value: 'GPIO1' } });
+    fireEvent.change(text, { target: { value: 'GPIO12' } });
+    expect(historyFlags(onLegendItemsChange)).toEqual([true, false]);
+    expect(onLegendItemsChange.mock.calls[1][0][0]).toEqual({ ...rows[0], text: 'GPIO12' });
+
+    fireEvent.blur(text);
+    fireEvent.focus(text);
+    fireEvent.change(text, { target: { value: 'IO' } });
+    expect(historyFlags(onLegendItemsChange)).toEqual([true, false, true]);
+  });
+
+  it('dragging through a row colour picker is one undo step per picker session', () => {
+    const onLegendItemsChange = vi.fn();
+    const { container } = openTable({ onLegendItemsChange });
+    const picker = container.querySelector('input[type=color][value="#dc2626"]')!;
+    fireEvent.pointerDown(picker);
+    fireEvent.focus(picker);
+    for (const c of ['#111111', '#222222']) fireEvent.input(picker, { target: { value: c } });
+    expect(historyFlags(onLegendItemsChange)).toEqual([true, false]);
+    expect(onLegendItemsChange.mock.calls[1][0][1]).toEqual({ ...rows[1], color: '#222222' });
+
+    fireEvent.blur(picker);
+    fireEvent.pointerDown(picker);
+    fireEvent.input(picker, { target: { value: '#333333' } });
+    expect(historyFlags(onLegendItemsChange)).toEqual([true, false, true]);
+  });
+
+  it('view settings report each change; clicking the active mode changes nothing', () => {
+    const onLegendModeChange = vi.fn();
+    const onLegendVisibilityChange = vi.fn();
+    const onLegendShowCountsChange = vi.fn();
+    openTable({ onLegendModeChange, onLegendVisibilityChange, onLegendShowCountsChange });
+    fireEvent.click(screen.getByText('All rows'));
+    expect(onLegendModeChange).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText('Only used colours'));
+    expect(onLegendModeChange).toHaveBeenCalledWith('used');
+    fireEvent.click(screen.getByLabelText('Show counts'));
+    expect(onLegendShowCountsChange).toHaveBeenCalledWith(true);
+    fireEvent.click(screen.getByLabelText('Show Table on Canvas'));
+    expect(onLegendVisibilityChange).toHaveBeenCalledWith(false);
+  });
+});
+
 describe('Sidebar in Turkish', () => {
   it('shows the interface texts in Turkish, user data unchanged', () => {
     render(<LanguageProvider initial='tr'><Sidebar {...sidebarProps()} /></LanguageProvider>);

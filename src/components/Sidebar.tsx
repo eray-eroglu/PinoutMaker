@@ -159,7 +159,8 @@ interface SidebarProps {
   gapSize: number;
   onGapSizeChange: (size: number) => void;
   legendItems: LegendItem[];
-  onLegendItemsChange: (items: LegendItem[]) => void;
+  /** `saveHistory` false: continues the undo step of the current typing / picker session. */
+  onLegendItemsChange: (items: LegendItem[], saveHistory?: boolean) => void;
   isLegendVisible: boolean;
   onLegendVisibilityChange: (visible: boolean) => void;
   legendMode: LegendMode;
@@ -258,6 +259,7 @@ export const Sidebar = ({
   // Text fields: one undo step per focus, recorded on the first change (an untouched field records nothing)
   const fieldSession = useEditSession();
   const textColorSession = useEditSession();
+  const legendColorSession = useEditSession();
 
   useEffect(() => {
     const handleFocus = (e: Event) => {
@@ -349,8 +351,9 @@ export const Sidebar = ({
   const handleMoveUp = (px: number) => nudge(0, -px);
   const handleMoveDown = (px: number) => nudge(0, px);
 
-  const updateLegendItem = (index: number, changes: Partial<LegendItem>) => {
-    onLegendItemsChange(legendItems.map((item, i) => (i === index ? { ...item, ...changes } : item)));
+  // Text and colour edits of a row: one undo step per typing / picker session
+  const updateLegendItem = (index: number, changes: Partial<LegendItem>, saveHistory: boolean) => {
+    onLegendItemsChange(legendItems.map((item, i) => (i === index ? { ...item, ...changes } : item)), saveHistory);
   };
 
   return (
@@ -457,7 +460,7 @@ export const Sidebar = ({
                     key={mode}
                     type="button"
                     aria-pressed={legendMode === mode}
-                    onClick={() => onLegendModeChange(mode)}
+                    onClick={() => { if (mode !== legendMode) onLegendModeChange(mode); }}
                     className={`flex-1 px-1 py-1 border-r last:border-r-0 border-gray-300 dark:border-gray-600 ${legendMode === mode ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}`}
                   >
                     {label}
@@ -484,18 +487,20 @@ export const Sidebar = ({
                   <input
                     type="color"
                     value={item.color}
-                    onChange={(e) => updateLegendItem(index, { color: e.target.value })}
+                    {...colorPickerSession(legendColorSession, (color, saveHistory) => updateLegendItem(index, { color }, saveHistory))}
                     className="w-6 h-6 p-0 border-0 rounded cursor-pointer shrink-0"
                   />
                   <input
                     type="text"
                     value={item.text}
-                    onChange={(e) => updateLegendItem(index, { text: e.target.value })}
+                    onChange={(e) => updateLegendItem(index, { text: e.target.value }, fieldSession.next())}
+                    onFocus={() => fieldSession.start()}
+                    onBlur={fieldSession.end}
                     className="flex-1 min-w-0 border border-gray-300 dark:border-gray-600 rounded px-2 py-1 text-xs outline-none focus:border-blue-500 bg-white dark:bg-gray-800 dark:text-gray-100"
                   />
                   <button
                     onClick={() => {
-                      onLegendItemsChange(legendItems.filter((_, i) => i !== index));
+                      onLegendItemsChange(legendItems.filter((_, i) => i !== index), true);
                     }}
                     className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 text-xs px-1"
                     title={t.removeRow}
@@ -506,7 +511,7 @@ export const Sidebar = ({
               ))}
               <button
                 onClick={() => {
-                  onLegendItemsChange([...legendItems, { id: crypto.randomUUID(), text: 'NEW ROW', color: '#888888' }]);
+                  onLegendItemsChange([...legendItems, { id: crypto.randomUUID(), text: 'NEW ROW', color: '#888888' }], true);
                 }}
                 className="w-full text-center text-xs text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 py-1 font-medium"
               >

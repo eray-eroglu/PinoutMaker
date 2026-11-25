@@ -13,11 +13,14 @@ import { exportPinoutTemplate, importPinoutTemplate, parsePinoutTemplate, pinout
 import { loadImageElement, loadProjectImages, parseProject, serializeProject } from './utils/project';
 import type { LoadedImage } from './utils/project';
 import { exportDiagram } from './utils/export';
+import { prepareImportedImage } from './utils/imageImport';
+import { buildPinListCsv, pinListFileName, PIN_LIST_MIME_TYPE } from './utils/pinList';
 import type { ExportOptions } from './utils/export';
 import { clearRecoveredAutosave, takeAutosaveForRecovery } from './utils/autosave';
 import type { AutosaveRecord } from './utils/autosave';
 import { useAutosave } from './hooks/useAutosave';
 import { RestoreBanner } from './components/RestoreBanner';
+import { EmptyState } from './components/EmptyState';
 import { ShortcutsHelp } from './components/ShortcutsHelp';
 import { centreOn, fitToContent, getContentBounds, zoomAroundCentre, ZOOM_FACTOR } from './utils/viewport';
 import { ARROW_DELTAS, nudgeImage, nudgeLine } from './utils/nudge';
@@ -38,7 +41,18 @@ import { deepEqual } from './utils/history';
 import type { Overlay } from './utils/keyboard';
 import { defineMessages, useLanguage, useMessages } from './i18n';
 
-type HistoryState = { pins: PinData[]; lines: LineData[]; images: LoadedImage[]; labelScale: number | null };
+// The legend (rows and how the table is shown) is part of the drawing and its exports, so it is
+// undoable too. Gap size and anchor size stay outside undo.
+type HistoryState = {
+  pins: PinData[];
+  lines: LineData[];
+  images: LoadedImage[];
+  labelScale: number | null;
+  legendItems: LegendItem[];
+  isLegendVisible: boolean;
+  legendMode: LegendMode;
+  legendShowCounts: boolean;
+};
 
 const MESSAGES = defineMessages({
   en: {
@@ -160,6 +174,10 @@ function App() {
     lines: lines.map(l => ({ ...l })),
     images: images.map(i => ({ ...i })),
     labelScale,
+    legendItems: legendItems.map(i => ({ ...i })),
+    isLegendVisible,
+    legendMode,
+    legendShowCounts,
   });
 
   const restore = (state: HistoryState) => {
@@ -167,6 +185,10 @@ function App() {
     setLines(state.lines);
     setImages(state.images);
     setLabelScale(state.labelScale);
+    setLegendItems(state.legendItems);
+    setIsLegendVisible(state.isLegendVisible);
+    setLegendMode(state.legendMode);
+    setLegendShowCounts(state.legendShowCounts);
   };
 
   const pushHistory = () => {
@@ -219,17 +241,14 @@ function App() {
     return newImg;
   };
 
-  const handleImageUpload = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      const result = e.target?.result as string;
-      try {
-        addImage(result, await loadImageElement(result), 0, 0);
-      } catch {
-        alert(t.imageLoadFailed(file.name));
-      }
-    };
-    reader.readAsDataURL(file);
+  const handleImageUpload = async (file: File) => {
+    try {
+      // Very large photos are scaled down first: they are embedded in the project and its autosave
+      const { src, element } = await prepareImportedImage(file);
+      addImage(src, element, 0, 0);
+    } catch {
+      alert(t.imageLoadFailed(file.name));
+    }
   };
 
   const handleImportProduct = async (product: Product, withPinout = false) => {
@@ -256,7 +275,7 @@ function App() {
     if (labelScale === null) setLabelScale(imported.labelScale);
     setPins(prev => [...prev, ...imported.pins]);
     setLines(prev => [...prev, ...imported.lines]);
-    // The legend is not part of undo; only add rows the project doesn't have yet.
+    // Only add legend rows the project doesn't have yet; they ride along with the image's undo step too.
     setLegendItems(prev => {
       const known = new Set(prev.map(i => i.text.trim().toLowerCase()));
       const added = imported.legendItems.filter(i => !known.has(i.text.trim().toLowerCase()));
@@ -414,6 +433,31 @@ function App() {
     const ratio = next / effectiveLabelScale;
     setPins(prev => scaleLabelsAroundAnchors(prev, ratio));
     setLabelScale(next);
+  };
+
+  // --- Legend --- (each call is one undo step unless saveHistory is false; a no-op records nothing)
+  const changeLegendItems = (next: LegendItem[], saveHistory = true) => {
+    if (deepEqual(next, legendItems)) return;
+    if (saveHistory) pushHistory();
+    setLegendItems(next);
+  };
+
+  const changeLegendVisibility = (visible: boolean) => {
+    if (visible === isLegendVisible) return;
+    pushHistory();
+    setIsLegendVisible(visible);
+  };
+
+  const changeLegendMode = (mode: LegendMode) => {
+    if (mode === legendMode) return;
+    pushHistory();
+    setLegendMode(mode);
+  };
+
+  const changeLegendShowCounts = (show: boolean) => {
+    if (show === legendShowCounts) return;
+    pushHistory();
+    setLegendShowCounts(show);
   };
 
   const updateLine = (updatedLine: LineData, saveHistory = true) => {
@@ -740,6 +784,16 @@ function App() {
     }
   };
 
+  /** Downloads every pin with its functions as a CSV for Excel / Sheets. */
+  const handleExportPinList = () => {
+    const url = URL.createObjectURL(new Blob([buildPinListCsv(pins, language)], { type: PIN_LIST_MIME_TYPE }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = pinListFileName();
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   // --- Keyboard shortcuts ---
   const closeOverlay = (overlay: Overlay) => {
     if (overlay === 'help') setIsHelpOpen(false);
@@ -901,6 +955,8 @@ function App() {
         hasHeaders={headers.length > 0}
         onExportMenuOpenChange={setIsExportMenuOpen}
         onShowShortcuts={() => setIsHelpOpen(true)}
+        onExportPinList={handleExportPinList}
+        hasPins={pins.length > 0}
       />
       <ProductLibrary
         isOpen={isLibraryOpen}
@@ -924,6 +980,15 @@ function App() {
               savedAt={recoveredAutosave.savedAt}
               onRestore={handleRestoreAutosave}
               onDiscard={handleDiscardAutosave}
+            />
+          )}
+          {/* Welcome card on an empty project; hidden while something else is asking for attention */}
+          {images.length === 0 && pins.length === 0 && lines.length === 0 && !recoveredAutosave && !isLibraryOpen
+            && !isAddingPin && !isAddingLine && !isAddingHeader && (
+            <EmptyState
+              onImportImage={handleImageUpload}
+              onOpenLibrary={() => setIsLibraryOpen(true)}
+              onLoadProject={handleLoadProject}
             />
           )}
           {headerDraft && (
@@ -991,13 +1056,13 @@ function App() {
           gapSize={gapSize}
           onGapSizeChange={setGapSize}
           legendItems={legendItems}
-          onLegendItemsChange={setLegendItems}
+          onLegendItemsChange={changeLegendItems}
           isLegendVisible={isLegendVisible}
-          onLegendVisibilityChange={setIsLegendVisible}
+          onLegendVisibilityChange={changeLegendVisibility}
           legendMode={legendMode}
-          onLegendModeChange={setLegendMode}
+          onLegendModeChange={changeLegendMode}
           legendShowCounts={legendShowCounts}
-          onLegendShowCountsChange={setLegendShowCounts}
+          onLegendShowCountsChange={changeLegendShowCounts}
           anchorSize={anchorSize}
           onAnchorSizeChange={setAnchorSize}
           labelScale={effectiveLabelScale}

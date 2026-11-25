@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
-import { ChevronDown, FileDown } from 'lucide-react';
+import { ChevronDown, FileDown, Table } from 'lucide-react';
 import type { ExportFormat, ExportOptions, PngScale } from '../utils/export';
 import { defineMessages, useMessages } from '../i18n';
 import { StableLabel } from './StableLabel';
@@ -14,6 +14,9 @@ const MESSAGES = defineMessages({
     pngSize: 'PNG size',
     transparent: 'Transparent PNG background',
     includeLegend: 'Include legend',
+    pinList: 'Pin list (CSV)',
+    pinListHint: 'All pins and functions, for Excel',
+    pinListEmpty: 'Add pins first: the project has none to list',
   },
   tr: {
     export: 'Dışa aktar',
@@ -24,6 +27,9 @@ const MESSAGES = defineMessages({
     pngSize: 'PNG boyutu',
     transparent: 'Saydam PNG arka planı',
     includeLegend: 'Lejantı dahil et',
+    pinList: 'Pin listesi (CSV)',
+    pinListHint: 'Tüm pinler ve fonksiyonlar, Excel için',
+    pinListEmpty: 'Önce pin ekleyin: projede listelenecek pin yok',
   },
 });
 
@@ -33,7 +39,19 @@ interface ExportMenuProps {
   isLegendVisible: boolean;
   /** Told when the dropdown opens or closes, so canvas shortcuts can stay out of the way. */
   onOpenChange?: (isOpen: boolean) => void;
+  /** Downloads the pins as a CSV. The "Pin list" entry is shown only when this is given. */
+  onExportPinList?: () => void;
+  /** False disables the "Pin list" entry (nothing to list). Defaults to true. */
+  hasPins?: boolean;
+  /**
+   * Classes for the "Export" text, e.g. `hidden lg:inline` to show only the icon on narrow
+   * screens. The button keeps "Export" as its accessible name either way.
+   */
+  labelClassName?: string;
 }
+
+const MENU_WIDTH = 256; // w-64
+const VIEWPORT_MARGIN = 8;
 
 const FORMATS: { format: ExportFormat; label: string; hint: 'pdfHint' | 'svgHint' | 'pngHint' }[] = [
   { format: 'pdf', label: 'PDF', hint: 'pdfHint' },
@@ -44,7 +62,7 @@ const FORMATS: { format: ExportFormat; label: string; hint: 'pdfHint' | 'svgHint
 const PNG_SCALES: PngScale[] = [1, 2, 4];
 
 /** TopBar "Export" button with a small dropdown of formats and options. */
-export const ExportMenu = ({ onExport, isLegendVisible, onOpenChange }: ExportMenuProps) => {
+export const ExportMenu = ({ onExport, isLegendVisible, onOpenChange, onExportPinList, hasPins = true, labelClassName = '' }: ExportMenuProps) => {
   const t = useMessages(MESSAGES);
   const [isOpen, setIsOpenState] = useState(false);
   const setIsOpen = (next: boolean) => {
@@ -56,6 +74,9 @@ export const ExportMenu = ({ onExport, isLegendVisible, onOpenChange }: ExportMe
   const [pngScale, setPngScale] = useState<PngScale>(2);
   const [transparent, setTransparent] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  // The dropdown is position:fixed so the toolbar's horizontal scroll (narrow windows) can't clip it
+  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
 
   useEffect(() => {
     if (!isOpen) return;
@@ -68,17 +89,32 @@ export const ExportMenu = ({ onExport, isLegendVisible, onOpenChange }: ExportMe
       e.stopPropagation();
       close();
     };
+    // A fixed dropdown would float away from its button when the toolbar scrolls or the window resizes
+    const onMove = () => close();
     document.addEventListener('pointerdown', onPointerDown);
     document.addEventListener('keydown', onKeyDown);
+    window.addEventListener('scroll', onMove, true);
+    window.addEventListener('resize', onMove);
     return () => {
       document.removeEventListener('pointerdown', onPointerDown);
       document.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('scroll', onMove, true);
+      window.removeEventListener('resize', onMove);
     };
   }, [isOpen]);
 
   const toggle = () => {
     // The legend checkbox follows the canvas legend each time; the PNG options are remembered
-    if (!isOpen) setIncludeLegend(isLegendVisible);
+    if (!isOpen) {
+      setIncludeLegend(isLegendVisible);
+      const rect = buttonRef.current?.getBoundingClientRect();
+      if (rect) {
+        const maxLeft = document.documentElement.clientWidth - MENU_WIDTH - VIEWPORT_MARGIN;
+        setMenuPosition({ top: rect.bottom + 4, left: Math.max(VIEWPORT_MARGIN, Math.min(rect.left, maxLeft)) });
+      }
+      // PDF export loads jsPDF on demand; start fetching it now so the first export has no delay
+      import('jspdf').catch(() => {});
+    }
     setIsOpen(!isOpen);
   };
 
@@ -87,23 +123,34 @@ export const ExportMenu = ({ onExport, isLegendVisible, onOpenChange }: ExportMe
     onExport({ format, includeLegend, pngScale, transparent });
   };
 
+  const exportPinList = () => {
+    setIsOpen(false);
+    onExportPinList?.();
+  };
+
   return (
     <div ref={rootRef} className='relative'>
       <button
+        ref={buttonRef}
         onClick={toggle}
+        aria-label={t.export}
         aria-haspopup='menu'
         aria-expanded={isOpen}
         title={t.exportTitle}
-        className={`flex items-center gap-2 px-3 py-1.5 border rounded text-sm cursor-pointer transition-colors ${isOpen
+        className={`flex shrink-0 items-center gap-2 px-3 py-1.5 border rounded text-sm cursor-pointer transition-colors ${isOpen
           ? 'bg-gray-100 border-gray-400 text-gray-800 dark:bg-gray-800 dark:border-gray-500 dark:text-gray-100'
           : 'bg-white border-gray-300 hover:bg-gray-50 text-gray-700 dark:bg-gray-900 dark:border-gray-600 dark:hover:bg-gray-800 dark:text-gray-200'
           }`}
       >
-        <FileDown size={16} /> <StableLabel text={t.export} variants={[MESSAGES.en.export, MESSAGES.tr.export]} /> <ChevronDown size={14} />
+        <FileDown size={16} />
+        <span className={labelClassName}>
+          <StableLabel text={t.export} variants={[MESSAGES.en.export, MESSAGES.tr.export]} />
+        </span>
+        <ChevronDown size={14} />
       </button>
 
       {isOpen && (
-        <div role='menu' className='absolute left-0 top-full mt-1 w-64 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded shadow-lg z-50 p-1 text-sm'>
+        <div role='menu' style={menuPosition} className='fixed w-64 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded shadow-lg z-50 p-1 text-sm'>
           {FORMATS.map(({ format, label, hint }) => (
             <button
               key={format}
@@ -145,6 +192,24 @@ export const ExportMenu = ({ onExport, isLegendVisible, onOpenChange }: ExportMe
               {t.includeLegend}
             </label>
           </div>
+
+          {onExportPinList && (
+            <div className='border-t border-gray-200 dark:border-gray-700 pt-1'>
+              <button
+                role='menuitem'
+                onClick={exportPinList}
+                disabled={!hasPins}
+                title={hasPins ? undefined : t.pinListEmpty}
+                className='w-full text-left px-3 py-1.5 rounded flex items-start gap-2 enabled:hover:bg-blue-50 dark:enabled:hover:bg-blue-900/40 enabled:cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed'
+              >
+                <Table size={14} className='mt-0.5 shrink-0 text-gray-500 dark:text-gray-400' />
+                <span>
+                  <span className='font-medium text-gray-800 dark:text-gray-100'>{t.pinList}</span>
+                  <span className='block text-xs text-gray-500 dark:text-gray-400'>{t.pinListHint}</span>
+                </span>
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -47,10 +47,73 @@ describe('TopBar', () => {
 
   it('calls onSave when Save button is clicked', () => {
     render(<TopBar {...mockProps} />);
-    const buttons = screen.getAllByRole('button');
-    const saveBtn = buttons.find(b => b.textContent?.includes('Save your current')) || buttons[0];
-    fireEvent.click(saveBtn);
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     expect(mockProps.onSave).toHaveBeenCalled();
+  });
+
+  const fullProps = { ...mockProps, onAddHeader: vi.fn(), onOpenPinTable: vi.fn(), onShowShortcuts: vi.fn() };
+
+  it('keeps every button named when narrow screens show only its icon', () => {
+    render(<TopBar {...fullProps} />);
+    const names = ['Save', 'Load', 'Import', 'Rotate', 'Export', 'Boardoza Library', 'Draw Line', 'Add Pin', 'Add Header', 'Pin table…', 'Keyboard shortcuts', 'Delete'];
+    for (const name of names) {
+      const button = screen.getByRole('button', { name });
+      // The visible label collapses below a breakpoint (CSS isn't applied in jsdom, so check the classes)
+      const label = [...button.querySelectorAll('span')].find(el => /\bhidden\b/.test(el.className));
+      expect(label, name).toBeDefined();
+      expect(label!.className).toMatch(/\b(lg|xl|2xl|min-\[\d+px\]):inline\b/);
+    }
+    // Save and Export keep their labels longest
+    expect(screen.getByRole('button', { name: 'Save' }).querySelector('span')).toHaveClass('lg:inline');
+    expect(screen.getByRole('button', { name: 'Export' }).querySelector('span')).toHaveClass('lg:inline');
+  });
+
+  it('names icon-only buttons in Turkish too', () => {
+    render(
+      <LanguageProvider initial='tr'>
+        <TopBar {...fullProps} />
+      </LanguageProvider>,
+    );
+    const names = ['Kaydet', 'Aç', 'İçe aktar', 'Döndür', 'Dışa aktar', 'Boardoza Kütüphanesi', 'Çizgi çiz', 'Pin ekle', 'Header ekle', 'Pin tablosu…', 'Klavye kısayolları', 'Sil'];
+    for (const name of names) expect(screen.getByRole('button', { name })).toBeInTheDocument();
+  });
+
+  it('describes each button with its tooltip, also when disabled', () => {
+    render(<TopBar {...fullProps} />);
+    expect(screen.getByRole('button', { name: 'Save' })).toHaveAccessibleDescription('Save your current board layout and pins to a file (Ctrl+S)');
+    expect(screen.getByRole('button', { name: 'Pin table…' })).toHaveAccessibleDescription('Add a header first, then fill it from a pasted table');
+    expect(screen.getByRole('button', { name: 'Delete' })).toHaveAccessibleDescription('Delete the currently selected pin or image (Del)');
+  });
+
+  it('pins a hovered tooltip under its button so the scrolling toolbar cannot clip it', () => {
+    render(<TopBar {...fullProps} />);
+    const button = screen.getByRole('button', { name: 'Add Pin' });
+    button.parentElement!.getBoundingClientRect = () => ({ left: 400, right: 440, top: 10, bottom: 44, width: 40, height: 34, x: 400, y: 10, toJSON: () => ({}) });
+    Object.defineProperty(document.documentElement, 'clientWidth', { configurable: true, value: 1280 });
+    fireEvent.pointerEnter(button.parentElement!);
+    delete (document.documentElement as { clientWidth?: number }).clientWidth;
+    const tooltip = document.getElementById(button.getAttribute('aria-describedby')!)!;
+    expect(tooltip).toHaveTextContent('Add a new customizable pin to the board');
+    expect(tooltip.style.position).toBe('fixed');
+    expect(tooltip.style.top).toBe('52px');
+    expect(tooltip.style.left).toBe('420px'); // centred; jsdom gives the tooltip no width
+    // The fallback centring (Tailwind's `translate`) and margin must not shift it again
+    expect(tooltip.style.translate).toBe('none');
+    expect(tooltip.style.margin).toBe('0px');
+  });
+
+  it('keeps the tooltip of a button at the window edge inside the window', () => {
+    render(<TopBar {...fullProps} />);
+    const button = screen.getByRole('button', { name: 'Save' });
+    const tooltip = document.getElementById(button.getAttribute('aria-describedby')!)!;
+    Object.defineProperty(tooltip, 'offsetWidth', { configurable: true, value: 300 });
+    button.parentElement!.getBoundingClientRect = () => ({ left: 16, right: 96, top: 10, bottom: 44, width: 80, height: 34, x: 16, y: 10, toJSON: () => ({}) });
+    Object.defineProperty(document.documentElement, 'clientWidth', { configurable: true, value: 1280 });
+    fireEvent.pointerEnter(button.parentElement!);
+    delete (document.documentElement as { clientWidth?: number }).clientWidth;
+    // Centred it would start at 56 - 150 = -94; it is clamped to the 8 px window margin
+    expect(tooltip.style.left).toBe('8px');
+    expect(tooltip.style.translate).toBe('none');
   });
 
   it('disables Delete Pin button when no pin is selected', () => {

@@ -46,3 +46,13 @@ describe('deepEqual', () => {
     expect(deepEqual({ a: 1, b: undefined }, { a: 1 })).toBe(true);
   });
 });
+
+describe('deepEqual on legend rows (no-op legend edits record no undo step)', () => {
+  it('treats copied rows as equal and a changed text or colour as different', () => {
+    const rows = [{ id: 'a', text: 'GPIO', color: '#16a34a' }];
+    expect(deepEqual(rows.map(r => ({ ...r })), rows)).toBe(true);
+    expect(deepEqual([{ ...rows[0], text: 'IO' }], rows)).toBe(false);
+    expect(deepEqual([{ ...rows[0], color: '#000000' }], rows)).toBe(false);
+    expect(deepEqual([...rows, { id: 'b', text: 'X', color: '#888888' }], rows)).toBe(false);
+  });
+});

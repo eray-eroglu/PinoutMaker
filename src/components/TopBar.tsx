@@ -1,5 +1,7 @@
-import { useRef } from 'react';
-import { Save, Upload, Plus, Trash2, RotateCw, FolderOpen, BookOpen, GripVertical, ClipboardPaste, Keyboard, Languages, Sun, Moon, Monitor } from 'lucide-react';
+import { useId, useRef } from 'react';
+import type { ReactNode } from 'react';
+import { Save, Upload, Plus, Spline, Trash2, RotateCw, FolderOpen, BookOpen, GripVertical, ClipboardPaste, Keyboard, Languages, Sun, Moon, Monitor } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { defineMessages, useLanguage, useMessages } from '../i18n';
 import { nextThemeSetting, useTheme } from '../theme';
 import { ExportMenu } from './ExportMenu';
@@ -71,6 +73,103 @@ type MessageKey = { [K in keyof typeof MESSAGES.en]: (typeof MESSAGES.en)[K] ext
 /** A label's texts in every language, so StableLabel can reserve the widest one. */
 const inAllLanguages = (...keys: MessageKey[]): string[] => keys.flatMap(key => [MESSAGES.en[key], MESSAGES.tr[key]]);
 
+/**
+ * From which window width each label is shown; narrower, its button shows only the icon (the label
+ * stays its accessible name and the hover tooltip still explains it). Every label reserves its
+ * widest language (StableLabel), so the toolbar is as wide in English as in Turkish. Measured
+ * toolbar widths (Segoe UI 14px): all labels ~1700px; up to 2xl ~1440px; up to xl ~1200px;
+ * Save and Export only ~890px; icons only ~760px. Narrower than that, the toolbar scrolls sideways.
+ */
+const SHOW_FROM = {
+  lg: 'hidden lg:inline',
+  xl: 'hidden xl:inline',
+  '2xl': 'hidden 2xl:inline',
+  wide: 'hidden min-[1800px]:inline',
+} as const;
+
+const NEUTRAL = 'bg-white border-gray-300 hover:bg-gray-50 text-gray-700 dark:bg-gray-900 dark:border-gray-600 dark:hover:bg-gray-800 dark:text-gray-200 cursor-pointer';
+const ACTIVE = 'bg-blue-100 border-blue-300 text-blue-700 dark:bg-blue-900/40 dark:border-blue-700 dark:text-blue-300 cursor-pointer';
+const DISABLED = 'bg-gray-50 border-gray-200 text-gray-400 cursor-not-allowed dark:bg-gray-800 dark:border-gray-700 dark:text-gray-500';
+
+const TOOLTIP_GAP = 8;
+const VIEWPORT_MARGIN = 8;
+
+/**
+ * Pins a tooltip under its button with position:fixed, so the toolbar's horizontal scroll can't
+ * clip it, and keeps it inside the window. Until the first hover it stays absolutely positioned.
+ */
+const placeTooltip = (anchor: HTMLElement, tip: HTMLElement) => {
+  const rect = anchor.getBoundingClientRect();
+  const maxLeft = document.documentElement.clientWidth - tip.offsetWidth - VIEWPORT_MARGIN;
+  const left = Math.max(VIEWPORT_MARGIN, Math.min(rect.left + rect.width / 2 - tip.offsetWidth / 2, maxLeft));
+  // The fallback classes centre the tooltip with Tailwind's -translate-x-1/2 (the CSS `translate`
+  // property, not `transform`) and space it with mt-2; both must be cancelled, or the tooltip ends up
+  // half its width to the left (off the window for the leftmost buttons) and 8 px too low.
+  Object.assign(tip.style, {
+    position: 'fixed',
+    top: `${rect.bottom + TOOLTIP_GAP}px`,
+    left: `${left}px`,
+    right: 'auto',
+    translate: 'none',
+    transform: 'none',
+    margin: '0',
+  });
+};
+
+interface ToolButtonProps {
+  icon: LucideIcon;
+  label: string;
+  /** The label in every language (StableLabel keeps room for the widest). */
+  variants: string[];
+  /** When the label is shown (a SHOW_FROM entry); below that the button is icon-only. */
+  labelClassName: string;
+  tooltip: ReactNode;
+  /** Colour and state classes. */
+  className: string;
+  onClick: () => void;
+  disabled?: boolean;
+  /** Ends the fallback tooltip at the button's right edge (buttons on the window's right side). */
+  tooltipAtEnd?: boolean;
+  /** Accessible name when it should differ from the visible label. */
+  ariaLabel?: string;
+}
+
+const ToolButton = ({ icon: Icon, label, variants, labelClassName, tooltip, className, onClick, disabled, tooltipAtEnd, ariaLabel }: ToolButtonProps) => {
+  const tooltipId = useId();
+  const tooltipRef = useRef<HTMLDivElement>(null);
+  return (
+    // The wrapper takes the hover so the tooltip also explains a disabled button
+    <div
+      className='group relative flex shrink-0'
+      onPointerEnter={e => {
+        if (tooltipRef.current) placeTooltip(e.currentTarget, tooltipRef.current);
+      }}
+    >
+      <button
+        type='button'
+        onClick={onClick}
+        disabled={disabled}
+        aria-label={ariaLabel ?? label}
+        aria-describedby={tooltipId}
+        className={`flex items-center gap-2 px-3 py-1.5 rounded text-sm transition-colors ${className}`}
+      >
+        <Icon size={16} />
+        <span className={labelClassName}>
+          <StableLabel text={label} variants={variants} />
+        </span>
+      </button>
+      <div
+        ref={tooltipRef}
+        id={tooltipId}
+        role='tooltip'
+        className={`absolute top-full mt-2 ${tooltipAtEnd ? 'right-0' : 'left-1/2 -translate-x-1/2'} opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-[opacity,visibility] duration-200 delay-500 bg-gray-800 dark:bg-gray-700 text-white text-xs rounded px-2 py-1 pointer-events-none z-50 whitespace-nowrap shadow-md`}
+      >
+        {tooltip}
+      </div>
+    </div>
+  );
+};
+
 interface TopBarProps {
   onImport: (file: File) => void;
   onAddPin: () => void;
@@ -95,6 +194,9 @@ interface TopBarProps {
   onOpenPinTable?: () => void;
   hasHeaders?: boolean;
   onExportMenuOpenChange?: (isOpen: boolean) => void;
+  /** Downloads the pin list as CSV (entry in the export menu). */
+  onExportPinList?: () => void;
+  hasPins?: boolean;
   /** Opens the keyboard shortcuts overlay (also on the ? key). */
   onShowShortcuts?: () => void;
 }
@@ -120,6 +222,8 @@ export const TopBar = ({
   onOpenPinTable,
   hasHeaders = false,
   onExportMenuOpenChange,
+  onExportPinList,
+  hasPins,
   onShowShortcuts,
 }: TopBarProps) => {
   const t = useMessages(MESSAGES);
@@ -144,7 +248,7 @@ export const TopBar = ({
   };
 
   return (
-    <div className='h-14 bg-gray-100 dark:bg-gray-900 border-b border-gray-300 dark:border-gray-700 flex items-center px-4 gap-4 shrink-0'>
+    <div className='h-14 bg-gray-100 dark:bg-gray-900 border-b border-gray-300 dark:border-gray-700 flex items-center px-2 lg:px-4 gap-2 xl:gap-3 min-[1800px]:gap-4 shrink-0 overflow-x-auto [scrollbar-width:thin]'>
       <input
         type='file'
         ref={fileInputRef}
@@ -152,172 +256,157 @@ export const TopBar = ({
         accept='image/*'
         onChange={handleFileChange}
       />
-      <button
+      <ToolButton
+        icon={Save}
+        label={t.save}
+        variants={inAllLanguages('save')}
+        labelClassName={SHOW_FROM.lg}
+        tooltip={t.saveTip}
         onClick={onSave}
-        className='group relative flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm cursor-pointer transition-colors'
-      >
-        <Save size={16} /> <StableLabel text={t.save} variants={inAllLanguages('save')} />
-        <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 delay-500 bg-gray-800 dark:bg-gray-700 text-white text-xs rounded px-2 py-1 pointer-events-none z-50 whitespace-nowrap shadow-md">
-          {t.saveTip}
-        </div>
-      </button>
-
-      <button
+        className='bg-blue-600 text-white hover:bg-blue-700 cursor-pointer'
+      />
+      <ToolButton
+        icon={FolderOpen}
+        label={t.load}
+        variants={inAllLanguages('load')}
+        labelClassName={SHOW_FROM['2xl']}
+        tooltip={t.loadTip}
         onClick={onLoad}
-        className='group relative flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-300 rounded hover:bg-gray-50 text-gray-700 dark:bg-gray-900 dark:border-gray-600 dark:hover:bg-gray-800 dark:text-gray-200 text-sm cursor-pointer transition-colors'
-      >
-        <FolderOpen size={16} /> <StableLabel text={t.load} variants={inAllLanguages('load')} />
-        <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 delay-500 bg-gray-800 dark:bg-gray-700 text-white text-xs rounded px-2 py-1 pointer-events-none z-50 whitespace-nowrap shadow-md">
-          {t.loadTip}
-        </div>
-      </button>
-
-      <button
+        className={`border ${NEUTRAL}`}
+      />
+      <ToolButton
+        icon={Upload}
+        label={t.import}
+        variants={inAllLanguages('import')}
+        labelClassName={SHOW_FROM['2xl']}
+        tooltip={t.importTip}
         onClick={handleImportClick}
-        className='group relative flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-300 rounded hover:bg-gray-50 text-gray-700 dark:bg-gray-900 dark:border-gray-600 dark:hover:bg-gray-800 dark:text-gray-200 text-sm cursor-pointer transition-colors'
-      >
-        <Upload size={16} /> <StableLabel text={t.import} variants={inAllLanguages('import')} />
-        <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 delay-500 bg-gray-800 dark:bg-gray-700 text-white text-xs rounded px-2 py-1 pointer-events-none z-50 whitespace-nowrap shadow-md">
-          {t.importTip}
-        </div>
-      </button>
-
-      <button
+        className={`border ${NEUTRAL}`}
+      />
+      <ToolButton
+        icon={RotateCw}
+        label={t.rotate}
+        variants={inAllLanguages('rotate')}
+        labelClassName={SHOW_FROM['2xl']}
+        tooltip={t.rotateTip}
         onClick={onRotateImage}
         disabled={!isImageLoaded}
-        className={`group relative flex items-center gap-2 px-3 py-1.5 border rounded text-sm transition-colors ${isImageLoaded
-          ? 'bg-white border-gray-300 hover:bg-gray-50 text-gray-700 dark:bg-gray-900 dark:border-gray-600 dark:hover:bg-gray-800 dark:text-gray-200 cursor-pointer'
-          : 'bg-gray-50 border-gray-200 text-gray-400 cursor-not-allowed dark:bg-gray-800 dark:border-gray-700 dark:text-gray-500'
-          }`}
-      >
-        <RotateCw size={16} /> <StableLabel text={t.rotate} variants={inAllLanguages('rotate')} />
-        <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 delay-500 bg-gray-800 dark:bg-gray-700 text-white text-xs rounded px-2 py-1 pointer-events-none z-50 whitespace-nowrap shadow-md">
-          {t.rotateTip}
-        </div>
-      </button>
+        className={`border ${isImageLoaded ? NEUTRAL : DISABLED}`}
+      />
 
-      <ExportMenu onExport={onExport} isLegendVisible={isLegendVisible} onOpenChange={onExportMenuOpenChange} />
+      <ExportMenu
+        onExport={onExport}
+        isLegendVisible={isLegendVisible}
+        onOpenChange={onExportMenuOpenChange}
+        onExportPinList={onExportPinList}
+        hasPins={hasPins}
+        labelClassName={SHOW_FROM.lg}
+      />
 
-      <button
+      <ToolButton
+        icon={BookOpen}
+        label={t.library}
+        variants={inAllLanguages('library')}
+        labelClassName={SHOW_FROM.wide}
+        tooltip={t.libraryTip}
         onClick={onToggleLibrary}
-        className={`group relative flex items-center gap-2 px-3 py-1.5 border rounded text-sm cursor-pointer transition-colors ${isLibraryOpen
-          ? 'bg-indigo-100 border-indigo-300 text-indigo-700 dark:bg-indigo-900/40 dark:border-indigo-700 dark:text-indigo-300'
-          : 'bg-white border-gray-300 hover:bg-gray-50 text-gray-700 dark:bg-gray-900 dark:border-gray-600 dark:hover:bg-gray-800 dark:text-gray-200'
+        className={`border ${isLibraryOpen
+          ? 'bg-indigo-100 border-indigo-300 text-indigo-700 dark:bg-indigo-900/40 dark:border-indigo-700 dark:text-indigo-300 cursor-pointer'
+          : NEUTRAL
           }`}
-      >
-<BookOpen size={16} /> <StableLabel text={t.library} variants={inAllLanguages('library')} />
-        <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 delay-500 bg-gray-800 dark:bg-gray-700 text-white text-xs rounded px-2 py-1 pointer-events-none z-50 whitespace-nowrap shadow-md">
-          {t.libraryTip}
-        </div>
-      </button>
+      />
 
-      <div className='w-px h-6 bg-gray-300 dark:bg-gray-600 mx-2'></div>
+      <div className='w-px h-6 bg-gray-300 dark:bg-gray-600 mx-1 lg:mx-2 shrink-0'></div>
 
-      <button
+      <ToolButton
+        icon={Spline}
+        label={t.drawLine}
+        variants={inAllLanguages('drawLine')}
+        labelClassName={SHOW_FROM.xl}
+        tooltip={t.drawLineTip}
         onClick={onAddLine}
-        className={`group relative flex items-center gap-2 px-3 py-1.5 border rounded text-sm cursor-pointer transition-colors ${isAddingLine
-          ? 'bg-blue-100 border-blue-300 text-blue-700 dark:bg-blue-900/40 dark:border-blue-700 dark:text-blue-300'
-          : 'bg-white border-gray-300 hover:bg-gray-50 text-gray-700 dark:bg-gray-900 dark:border-gray-600 dark:hover:bg-gray-800 dark:text-gray-200'
-          }`}
-      >
-        <Plus size={16} /> <StableLabel text={t.drawLine} variants={inAllLanguages('drawLine')} />
-        <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 delay-500 bg-gray-800 dark:bg-gray-700 text-white text-xs rounded px-2 py-1 pointer-events-none z-50 whitespace-nowrap shadow-md">
-          {t.drawLineTip}
-        </div>
-      </button>
-
-      <button
+        className={`border ${isAddingLine ? ACTIVE : NEUTRAL}`}
+      />
+      <ToolButton
+        icon={Plus}
+        label={t.addPin}
+        variants={inAllLanguages('addPin')}
+        labelClassName={SHOW_FROM.xl}
+        tooltip={t.addPinTip}
         onClick={onAddPin}
-        className={`group relative flex items-center gap-2 px-3 py-1.5 border rounded text-sm cursor-pointer transition-colors ${isAddingPin
-          ? 'bg-blue-100 border-blue-300 text-blue-700 dark:bg-blue-900/40 dark:border-blue-700 dark:text-blue-300'
-          : 'bg-white border-gray-300 hover:bg-gray-50 text-gray-700 dark:bg-gray-900 dark:border-gray-600 dark:hover:bg-gray-800 dark:text-gray-200'
-          }`}
-      >
-        <Plus size={16} /> <StableLabel text={t.addPin} variants={inAllLanguages('addPin')} />
-        <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 delay-500 bg-gray-800 dark:bg-gray-700 text-white text-xs rounded px-2 py-1 pointer-events-none z-50 whitespace-nowrap shadow-md">
-          {t.addPinTip}
-        </div>
-      </button>
-
+        className={`border ${isAddingPin ? ACTIVE : NEUTRAL}`}
+      />
       {onAddHeader && (
-        <button
+        <ToolButton
+          icon={GripVertical}
+          label={t.addHeader}
+          variants={inAllLanguages('addHeader')}
+          labelClassName={SHOW_FROM.xl}
+          tooltip={t.addHeaderTip}
           onClick={onAddHeader}
-          className={`group relative flex items-center gap-2 px-3 py-1.5 border rounded text-sm cursor-pointer transition-colors ${isAddingHeader
-            ? 'bg-blue-100 border-blue-300 text-blue-700 dark:bg-blue-900/40 dark:border-blue-700 dark:text-blue-300'
-            : 'bg-white border-gray-300 hover:bg-gray-50 text-gray-700 dark:bg-gray-900 dark:border-gray-600 dark:hover:bg-gray-800 dark:text-gray-200'
-            }`}
-        >
-          <GripVertical size={16} /> <StableLabel text={t.addHeader} variants={inAllLanguages('addHeader')} />
-          <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 delay-500 bg-gray-800 dark:bg-gray-700 text-white text-xs rounded px-2 py-1 pointer-events-none z-50 whitespace-nowrap shadow-md">
-            {t.addHeaderTip}
-          </div>
-        </button>
+          className={`border ${isAddingHeader ? ACTIVE : NEUTRAL}`}
+        />
       )}
-
       {onOpenPinTable && (
-        <button
+        <ToolButton
+          icon={ClipboardPaste}
+          label={t.pinTable}
+          variants={inAllLanguages('pinTable')}
+          labelClassName={SHOW_FROM['2xl']}
+          tooltip={hasHeaders ? t.pinTableTip : t.pinTableDisabledTip}
           onClick={onOpenPinTable}
           disabled={!hasHeaders}
-          className={`group relative flex items-center gap-2 px-3 py-1.5 border rounded text-sm transition-colors ${hasHeaders
-            ? 'bg-white border-gray-300 hover:bg-gray-50 text-gray-700 dark:bg-gray-900 dark:border-gray-600 dark:hover:bg-gray-800 dark:text-gray-200 cursor-pointer'
-            : 'bg-gray-50 border-gray-200 text-gray-400 cursor-not-allowed dark:bg-gray-800 dark:border-gray-700 dark:text-gray-500'
-            }`}
-        >
-          <ClipboardPaste size={16} /> <StableLabel text={t.pinTable} variants={inAllLanguages('pinTable')} />
-          <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 delay-500 bg-gray-800 dark:bg-gray-700 text-white text-xs rounded px-2 py-1 pointer-events-none z-50 whitespace-nowrap shadow-md">
-            {hasHeaders ? t.pinTableTip : t.pinTableDisabledTip}
-          </div>
-        </button>
+          className={`border ${hasHeaders ? NEUTRAL : DISABLED}`}
+        />
       )}
-      <div className='ml-auto flex items-center gap-4'>
-      <div className='flex items-center gap-1'>
-        <button
-          type='button'
-          onClick={() => setLanguage(language === 'tr' ? 'en' : 'tr')}
-          aria-label={t.switchLanguage}
-          title={t.switchLanguage}
-          className='flex items-center gap-1 px-2 py-1.5 bg-white border border-gray-300 rounded hover:bg-gray-50 text-gray-700 dark:bg-gray-900 dark:border-gray-600 dark:hover:bg-gray-800 dark:text-gray-200 text-sm font-medium cursor-pointer transition-colors'
-        >
-          <Languages size={16} /> <StableLabel text={language.toUpperCase()} variants={['EN', 'TR']} />
-        </button>
-        <button
-          type='button'
-          onClick={() => setThemeSetting(nextThemeSetting(themeSetting))}
-          aria-label={t.theme(themeSetting)}
-          title={t.theme(themeSetting)}
-          className='flex items-center px-2 py-1.5 bg-white border border-gray-300 rounded hover:bg-gray-50 text-gray-700 dark:bg-gray-900 dark:border-gray-600 dark:hover:bg-gray-800 dark:text-gray-200 cursor-pointer transition-colors'
-        >
-          <ThemeIcon size={16} />
-        </button>
-      </div>
-      {onShowShortcuts && (
-        <button
-          type='button'
-          onClick={onShowShortcuts}
-          aria-label={t.shortcutsLabel}
-          className='group relative flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-300 rounded hover:bg-gray-50 text-gray-700 dark:bg-gray-900 dark:border-gray-600 dark:hover:bg-gray-800 dark:text-gray-200 text-sm cursor-pointer transition-colors'
-        >
-          <Keyboard size={16} /> <StableLabel text={t.shortcuts} variants={inAllLanguages('shortcuts')} />
-          <div className="absolute top-full mt-2 right-0 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 delay-500 bg-gray-800 dark:bg-gray-700 text-white text-xs rounded px-2 py-1 pointer-events-none z-50 whitespace-nowrap shadow-md">
-            {t.shortcutsTip}
-          </div>
-        </button>
-      )}
-      <div className='group relative flex'>
-        <button
+      <div className='ml-auto flex items-center gap-2 xl:gap-3 min-[1800px]:gap-4 shrink-0'>
+        <div className='flex items-center gap-1'>
+          <button
+            type='button'
+            onClick={() => setLanguage(language === 'tr' ? 'en' : 'tr')}
+            aria-label={t.switchLanguage}
+            title={t.switchLanguage}
+            className='flex items-center gap-1 px-2 py-1.5 bg-white border border-gray-300 rounded hover:bg-gray-50 text-gray-700 dark:bg-gray-900 dark:border-gray-600 dark:hover:bg-gray-800 dark:text-gray-200 text-sm font-medium cursor-pointer transition-colors'
+          >
+            <Languages size={16} /> <StableLabel text={language.toUpperCase()} variants={['EN', 'TR']} />
+          </button>
+          <button
+            type='button'
+            onClick={() => setThemeSetting(nextThemeSetting(themeSetting))}
+            aria-label={t.theme(themeSetting)}
+            title={t.theme(themeSetting)}
+            className='flex items-center px-2 py-1.5 bg-white border border-gray-300 rounded hover:bg-gray-50 text-gray-700 dark:bg-gray-900 dark:border-gray-600 dark:hover:bg-gray-800 dark:text-gray-200 cursor-pointer transition-colors'
+          >
+            <ThemeIcon size={16} />
+          </button>
+        </div>
+        {onShowShortcuts && (
+          <ToolButton
+            icon={Keyboard}
+            label={t.shortcuts}
+            ariaLabel={t.shortcutsLabel}
+            variants={inAllLanguages('shortcuts')}
+            labelClassName={SHOW_FROM.wide}
+            tooltip={t.shortcutsTip}
+            onClick={onShowShortcuts}
+            tooltipAtEnd
+            className={`border ${NEUTRAL}`}
+          />
+        )}
+        <ToolButton
+          icon={Trash2}
+          label={t.delete}
+          variants={inAllLanguages('delete')}
+          labelClassName={SHOW_FROM.xl}
+          tooltip={t.deleteTip}
           onClick={onDeletePin}
           disabled={!isPinSelected}
-          className={`flex items-center gap-2 px-3 py-1.5 border rounded text-sm transition-colors ${isPinSelected
+          tooltipAtEnd
+          className={`border ${isPinSelected
             ? 'bg-red-50 border-red-200 text-red-600 hover:bg-red-100 cursor-pointer dark:bg-red-950/40 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/40'
-            : 'bg-gray-50 border-gray-200 text-gray-400 cursor-not-allowed dark:bg-gray-800 dark:border-gray-700 dark:text-gray-500'
+            : DISABLED
             }`}
-        >
-          <Trash2 size={16} /> <StableLabel text={t.delete} variants={inAllLanguages('delete')} />
-        </button>
-        <div className="absolute top-full mt-2 right-0 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 delay-500 bg-gray-800 dark:bg-gray-700 text-white text-xs rounded px-2 py-1 pointer-events-none z-50 whitespace-nowrap shadow-md">
-          {t.deleteTip}
-        </div>
-      </div>
+        />
       </div>
     </div>
   );
